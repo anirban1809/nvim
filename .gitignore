@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Vim/Neovim swap, backup, and undo files
+*~
+*.swp
+*.swo
+[._]*.s[a-v][a-z]
+[._]*.un~
+
+# Editor sessions
+Session.vim
+session.vim
+
+# Machine-local overrides (not shared)
+*.local.lua
+lua/**/local.lua
