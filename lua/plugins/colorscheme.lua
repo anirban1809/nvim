@@ -4,7 +4,8 @@ return {
     priority = 1000,
     lazy = false,
     config = function()
-      require("tokyonight").setup({
+      local ok, error_message = pcall(function()
+        require("tokyonight").setup({
         style = "storm",
         terminal_colors = true,
         styles = {
@@ -14,10 +15,32 @@ return {
           variables = { italic = false },
         },
         on_colors = function(colors)
-          local util = require("tokyonight.util")
-          local neutral = colors.fg_dark
+          local neutral = colors.fg_dark or colors.fg or "#a9b1d6"
+          local function rgb(color)
+            if type(color) ~= "string" or not color:match("^#%x%x%x%x%x%x$") then
+              return nil
+            end
+            return {
+              tonumber(color:sub(2, 3), 16),
+              tonumber(color:sub(4, 5), 16),
+              tonumber(color:sub(6, 7), 16),
+            }
+          end
           local function mute(color, amount)
-            return util.blend(color, amount or 0.78, neutral)
+            local foreground = rgb(color)
+            local background = rgb(neutral)
+            if not foreground or not background then
+              return color
+            end
+
+            local alpha = amount or 0.78
+            local channels = {}
+            for index = 1, 3 do
+              channels[index] = math.floor(
+                alpha * foreground[index] + (1 - alpha) * background[index] + 0.5
+              )
+            end
+            return string.format("#%02x%02x%02x", unpack(channels))
           end
 
           for _, name in ipairs({
@@ -25,28 +48,36 @@ return {
             "cyan", "green", "green1", "green2", "magenta", "magenta2",
             "orange", "purple", "red", "red1", "teal", "yellow",
           }) do
-            colors[name] = mute(colors[name])
+            if colors[name] then
+              colors[name] = mute(colors[name])
+            end
           end
 
-          colors.error = colors.red1
+          colors.error = colors.red1 or colors.red
           colors.warning = colors.yellow
-          colors.info = colors.blue2
-          colors.hint = colors.teal
+          colors.info = colors.blue2 or colors.blue
+          colors.hint = colors.teal or colors.cyan
           colors.todo = colors.blue
-          colors.border_highlight = colors.blue1
+          colors.border_highlight = colors.blue1 or colors.blue
 
           for _, name in ipairs({ "add", "change", "delete" }) do
-            colors.git[name] = mute(colors.git[name])
+            if colors.git and colors.git[name] then
+              colors.git[name] = mute(colors.git[name])
+            end
           end
           for _, name in ipairs({ "add", "change", "delete", "text" }) do
-            colors.diff[name] = util.blend(colors.diff[name], 0.82, colors.bg)
+            if colors.diff and colors.diff[name] then
+              colors.diff[name] = mute(colors.diff[name], 0.82)
+            end
           end
           for _, name in ipairs({
             "red", "red_bright", "green", "green_bright", "yellow",
             "yellow_bright", "blue", "blue_bright", "magenta",
             "magenta_bright", "cyan", "cyan_bright",
           }) do
-            colors.terminal[name] = mute(colors.terminal[name])
+            if colors.terminal and colors.terminal[name] then
+              colors.terminal[name] = mute(colors.terminal[name])
+            end
           end
 
           colors.rainbow = {
@@ -113,8 +144,19 @@ return {
           }
           highlights.IncSearch = highlights.CurSearch
         end,
-      })
-      vim.cmd.colorscheme("tokyonight-storm")
+        })
+        vim.cmd.colorscheme("tokyonight-storm")
+      end)
+      if not ok then
+        vim.cmd.colorscheme("habamax")
+        vim.schedule(function()
+          vim.notify(
+            "TokyoNight failed to load; using habamax so ThemeHub remains available:\n" .. error_message,
+            vim.log.levels.ERROR,
+            { title = "Colorscheme" }
+          )
+        end)
+      end
     end,
   },
 

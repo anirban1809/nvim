@@ -118,6 +118,7 @@ current_step="final Neovim verification"
 nvim --headless \
   "+Lazy load nvim-treesitter mason.nvim" \
   "+lua require('portable.verify').assert_ready()" \
+  "+lua local path=vim.api.nvim_get_runtime_file('lua/tokyonight/init.lua', false)[1]; assert(path and path:find('/lazy/tokyonight.nvim/', 1, true), 'TokyoNight is shadowed by a legacy package: ' .. tostring(path))" \
   "+checkhealth portable" \
   "+lua local report=table.concat(vim.api.nvim_buf_get_lines(0,0,-1,false),'\\n'); assert(not report:find('ERROR',1,true), report)" \
   +qa

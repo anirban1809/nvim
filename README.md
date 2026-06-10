@@ -35,6 +35,10 @@ run the script again.
 The Nerd Font is optional. A pre-existing font conflict will produce a warning
 but will not prevent Neovim, plugins, LSP servers, or debuggers from installing.
 
+Legacy native packages and packer plugins are not loaded. This prevents old
+copies under `stdpath("data")/site/pack` from shadowing the versions pinned by
+`lazy-lock.json`.
+
 ## Repair or retry an installation
 
 The bootstrap is idempotent. Pull the latest fixes and run it again:
