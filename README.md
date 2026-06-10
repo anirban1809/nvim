@@ -24,12 +24,30 @@ The script:
 1. Checks for the Xcode Command Line Tools.
 2. Installs Homebrew when necessary.
 3. Installs Neovim, Git, search/build tools, Go, Node.js, Rustup, and a Nerd Font.
-4. Adds Homebrew and its keg-only Rustup installation to `~/.zprofile`.
+4. Reuses an existing Rust toolchain, or installs Rustup when Rust is absent.
 5. Links the checkout to `${XDG_CONFIG_HOME:-~/.config}/nvim`.
 6. Installs the pinned plugins, Mason tools, and Tree-sitter parsers.
+7. Runs a final health check and reports the exact failed installation stage.
 
 If the Xcode Command Line Tools prompt appears, finish that installation and
 run the script again.
+
+The Nerd Font is optional. A pre-existing font conflict will produce a warning
+but will not prevent Neovim, plugins, LSP servers, or debuggers from installing.
+
+## Repair or retry an installation
+
+The bootstrap is idempotent. Pull the latest fixes and run it again:
+
+```sh
+cd ~/src/nvim-config
+git pull --ff-only
+./scripts/bootstrap-macos.sh
+```
+
+If the repository was cloned somewhere else, run the same commands from that
+checkout. On failure, the script prints the exact installation stage that must
+be addressed before retrying.
 
 ## Verify
 

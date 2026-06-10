@@ -241,6 +241,13 @@ return {
       -- Auxiliary tools (formatters, debug adapters)
       require("mason-tool-installer").setup({
         ensure_installed = {
+          -- LSP servers are listed here as well as in mason-lspconfig so the
+          -- portable bootstrap can install them synchronously.
+          "clangd",
+          "gopls",
+          "lua-language-server",
+          "rust-analyzer",
+          "typescript-language-server",
           -- Formatters
           "prettierd", "prettier",
           "stylua",

@@ -1,4 +1,5 @@
 local M = {}
+local verify = require("portable.verify")
 
 local function executable(name)
   return vim.fn.executable(name) == 1
@@ -36,29 +37,22 @@ function M.check()
   check_executables({ "git", "make", "cc", "rg", "fd" }, true)
 
   vim.health.start("Language runtimes")
-  check_executables({ "go", "node", "npm", "rustup", "cargo", "rustc" }, false)
+  check_executables({ "go", "node", "npm", "cargo", "rustc" }, false)
 
   vim.health.start("Mason tools")
   local mason_bin = vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "bin")
-  for _, name in ipairs({
-    "clang-format",
-    "clangd",
-    "codelldb",
-    "dlv",
-    "eslint_d",
-    "gofumpt",
-    "goimports",
-    "gopls",
-    "js-debug-adapter",
-    "lua-language-server",
-    "prettier",
-    "prettierd",
-    "rust-analyzer",
-    "stylua",
-    "typescript-language-server",
-  }) do
+  for _, name in ipairs(verify.mason_tools) do
     local path = vim.fs.joinpath(mason_bin, name)
     if vim.uv.fs_stat(path) then
+      vim.health.ok(name)
+    else
+      vim.health.warn(("%s is not installed; rerun scripts/bootstrap-macos.sh"):format(name))
+    end
+  end
+
+  vim.health.start("Tree-sitter parsers")
+  for _, name in ipairs(verify.treesitter_parsers) do
+    if #vim.api.nvim_get_runtime_file("parser/" .. name .. ".*", true) > 0 then
       vim.health.ok(name)
     else
       vim.health.warn(("%s is not installed; rerun scripts/bootstrap-macos.sh"):format(name))
