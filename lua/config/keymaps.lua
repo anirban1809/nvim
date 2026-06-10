@@ -109,6 +109,29 @@ local function select_adjacent_word(direction)
   vim.cmd.normal({ args = { direction > 0 and "wviw" or "bviw" }, bang = true })
 end
 
+local function extend_word_selection(direction)
+  local anchor = vim.fn.getpos("v")
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local anchor_pos = { anchor[2], anchor[3] - 1 }
+  local cursor_before_anchor = cursor[1] < anchor_pos[1]
+    or (cursor[1] == anchor_pos[1] and cursor[2] < anchor_pos[2])
+  local start_pos = cursor_before_anchor and cursor or anchor_pos
+  local end_pos = cursor_before_anchor and anchor_pos or cursor
+
+  vim.cmd.normal({ args = { vim.keycode("<Esc>") }, bang = true })
+  if direction > 0 then
+    vim.api.nvim_win_set_cursor(0, start_pos)
+    vim.cmd.normal({ args = { "v" }, bang = true })
+    vim.api.nvim_win_set_cursor(0, end_pos)
+    vim.cmd.normal({ args = { "e" }, bang = true })
+  else
+    vim.api.nvim_win_set_cursor(0, end_pos)
+    vim.cmd.normal({ args = { "v" }, bang = true })
+    vim.api.nvim_win_set_cursor(0, start_pos)
+    vim.cmd.normal({ args = { "b" }, bang = true })
+  end
+end
+
 vim.api.nvim_create_autocmd("BufDelete", {
   group = vim.api.nvim_create_augroup("vscode_closed_files", { clear = true }),
   callback = function(event)
@@ -296,6 +319,7 @@ map("i", "<D-c>", '<C-o>"+yy', "Copy Line")
 map("x", "<D-c>", '"+y', "Copy")
 map("n", "<D-x>", '"+dd', "Cut Line")
 map("x", "<D-x>", '"+d', "Cut")
+map("x", "<BS>", '"_d', "Delete Selection")
 map("n", "<D-v>", '"+p', "Paste")
 map("x", "<D-v>", '"_d"+P', "Paste")
 map("i", "<D-v>", "<C-r>+", "Paste")
@@ -317,6 +341,14 @@ map("n", "q", select_current_word, "Select Current Word")
 map("x", "q", function()
   select_adjacent_word(-1)
 end, "Select Previous Word")
+map("n", "W", select_current_word, "Select Current Word")
+map("x", "W", function()
+  extend_word_selection(1)
+end, "Extend Selection to Next Word")
+map("n", "Q", select_current_word, "Select Current Word")
+map("x", "Q", function()
+  extend_word_selection(-1)
+end, "Extend Selection to Previous Word")
 map("n", "{", "va{", "Select Enclosing Braces")
 map("n", "(", "va(", "Select Enclosing Parentheses")
 map("n", "[", "va[", "Select Enclosing Brackets")
