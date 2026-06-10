@@ -1,11 +1,40 @@
 return {
   {
     "mfussenegger/nvim-dap",
-    ft = { "go" },
+    ft = { "go", "c", "cpp", "rust", "typescript", "javascript", "typescriptreact", "javascriptreact" },
     dependencies = {
-      "rcarriga/nvim-dap-ui",
-      "nvim-neotest/nvim-nio",
-      "theHamsta/nvim-dap-virtual-text",
+      {
+        "igorlfs/nvim-dap-view",
+        version = "1.*",
+        opts = {
+          auto_toggle = true,
+          windows = {
+            position = "below",
+            size = 0.3,
+            terminal = {
+              position = "left",
+              size = 0.4,
+            },
+          },
+          winbar = {
+            default_section = "scopes",
+          },
+          hover = {
+            border = "rounded",
+          },
+          keymaps = {
+            breakpoints = {
+              delete_breakpoint = "x",
+            },
+            watches = {
+              delete_expression = "x",
+            },
+          },
+          virtual_text = {
+            enabled = false,
+          },
+        },
+      },
       "jay-babu/mason-nvim-dap.nvim",
       "leoluz/nvim-dap-go",
       -- TS/JS adapter helper
@@ -24,11 +53,130 @@ return {
       { "<F10>", function() require("dap").step_over() end, desc = "Debug: Step Over" },
       { "<F11>", function() require("dap").step_into() end, desc = "Debug: Step Into" },
       { "<S-F11>", function() require("dap").step_out() end, desc = "Debug: Step Out" },
-      { "<D-S-d>", function() require("dapui").toggle() end, desc = "View: Run and Debug" },
+      { "<D-S-d>", function() require("dap-view").toggle() end, desc = "View: Run and Debug" },
+      { "K", function() require("dap-view").hover(nil, true) end, mode = { "n", "x" }, desc = "Debug: Inspect Value" },
     },
     config = function()
-      local dap, dapui = require("dap"), require("dapui")
+      local dap = require("dap")
       local vscode = require("dap.ext.vscode")
+      local debug_focus_buffers = {}
+      local last_editor_win
+
+      local function is_debug_window(win)
+        if not win or not vim.api.nvim_win_is_valid(win) then
+          return false
+        end
+        if vim.w[win].dapview_win or vim.w[win].dapview_win_term then
+          return true
+        end
+        local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
+        return filetype == "dap-view" or filetype == "dap-view-hover" or filetype == "dap-repl"
+      end
+
+      local function focus_debugger()
+        local state = require("dap-view.state")
+        local current_win = vim.api.nvim_get_current_win()
+        if not is_debug_window(current_win) then
+          last_editor_win = current_win
+        end
+
+        if not state.winnr or not vim.api.nvim_win_is_valid(state.winnr) then
+          require("dap-view").open()
+        end
+        if state.winnr and vim.api.nvim_win_is_valid(state.winnr) then
+          vim.api.nvim_set_current_win(state.winnr)
+        end
+      end
+
+      local function focus_editor()
+        if last_editor_win and vim.api.nvim_win_is_valid(last_editor_win) then
+          vim.api.nvim_set_current_win(last_editor_win)
+          return
+        end
+        vim.cmd.wincmd("p")
+      end
+
+      local function map_debug_focus(bufnr)
+        if vim.bo[bufnr].buftype ~= "" or debug_focus_buffers[bufnr] then
+          return
+        end
+        vim.keymap.set("n", "d", focus_debugger, {
+          buffer = bufnr,
+          silent = true,
+          desc = "Debug: Focus Debugger",
+        })
+        debug_focus_buffers[bufnr] = true
+      end
+
+      local function clear_debug_focus()
+        for bufnr in pairs(debug_focus_buffers) do
+          if vim.api.nvim_buf_is_valid(bufnr) then
+            pcall(vim.keymap.del, "n", "d", { buffer = bufnr })
+          end
+        end
+        debug_focus_buffers = {}
+      end
+
+      local focus_group = vim.api.nvim_create_augroup("dap_view_focus", { clear = true })
+      vim.api.nvim_create_autocmd("WinEnter", {
+        group = focus_group,
+        callback = function()
+          local win = vim.api.nvim_get_current_win()
+          if not is_debug_window(win) then
+            last_editor_win = win
+          end
+        end,
+      })
+      vim.api.nvim_create_autocmd("BufEnter", {
+        group = focus_group,
+        callback = function(event)
+          if dap.session() then
+            map_debug_focus(event.buf)
+          end
+        end,
+      })
+      vim.api.nvim_create_autocmd("FileType", {
+        group = focus_group,
+        pattern = { "dap-view", "dap-view-hover", "dap-repl" },
+        callback = function(event)
+          vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(event.buf) then
+              vim.keymap.set("n", "d", focus_editor, {
+                buffer = event.buf,
+                silent = true,
+                desc = "Debug: Focus Editor",
+              })
+            end
+          end)
+        end,
+      })
+
+      local function debug_started()
+        require("config.trouble").debug_started()
+      end
+      dap.listeners.before.attach.trouble = debug_started
+      dap.listeners.before.launch.trouble = debug_started
+      dap.listeners.after.event_initialized.dap_view_focus = function()
+        map_debug_focus(vim.api.nvim_get_current_buf())
+        debug_started()
+      end
+      local function debug_stopped()
+        clear_debug_focus()
+        require("config.trouble").debug_stopped()
+      end
+      dap.listeners.before.event_terminated.dap_view_focus = debug_stopped
+      dap.listeners.before.event_exited.dap_view_focus = debug_stopped
+      dap.listeners.before.disconnect.dap_view_focus = debug_stopped
+
+      vim.api.nvim_create_autocmd("FileType", {
+        group = vim.api.nvim_create_augroup("dap_view_hover_wrap", { clear = true }),
+        pattern = "dap-view-hover",
+        callback = function()
+          vim.wo.wrap = true
+          vim.wo.linebreak = true
+          vim.wo.breakindent = true
+        end,
+      })
 
       local function find_launch_json(bufnr)
         local buffer_path = vim.api.nvim_buf_get_name(bufnr)
@@ -108,47 +256,14 @@ return {
         },
       })
 
-      dapui.setup({
-        layouts = {
-          {
-            elements = {
-              { id = "scopes",      size = 0.35 },
-              { id = "breakpoints", size = 0.20 },
-              { id = "stacks",      size = 0.25 },
-              { id = "watches",     size = 0.20 },
-            },
-            position = "left",
-            size = 50,
-          },
-          {
-            elements = {
-              { id = "repl",    size = 0.5 },
-              { id = "console", size = 0.5 },
-            },
-            position = "bottom",
-            size = 12,
-          },
-        },
-        floating = { border = "rounded" },
-      })
-
-      require("nvim-dap-virtual-text").setup({
-        commented = true,
-        virt_text_pos = "eol",
-      })
-
-      -- Auto open/close DAP UI
-      dap.listeners.before.attach.dapui_config            = function() dapui.open() end
-      dap.listeners.before.launch.dapui_config            = function() dapui.open() end
-      dap.listeners.before.event_terminated.dapui_config  = function() dapui.close() end
-      dap.listeners.before.event_exited.dapui_config      = function() dapui.close() end
-
       -- Pretty signs
       vim.fn.sign_define("DapBreakpoint",          { text = "●",  texthl = "DiagnosticSignError", linehl = "", numhl = "" })
       vim.fn.sign_define("DapBreakpointCondition", { text = "◆",  texthl = "DiagnosticSignWarn",  linehl = "", numhl = "" })
       vim.fn.sign_define("DapLogPoint",            { text = "◆",  texthl = "DiagnosticSignInfo",  linehl = "", numhl = "" })
       vim.fn.sign_define("DapStopped",             { text = "▶",  texthl = "DiagnosticSignWarn",  linehl = "Visual", numhl = "DiagnosticSignWarn" })
       vim.fn.sign_define("DapBreakpointRejected",  { text = "✗",  texthl = "DiagnosticSignHint",  linehl = "", numhl = "" })
+
+      require("config.dap_breakpoints").setup()
 
       -- ===== Adapters =====
       local mason_path = vim.fn.stdpath("data") .. "/mason"

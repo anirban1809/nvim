@@ -71,15 +71,7 @@ return {
   {
     "windwp/nvim-autopairs",
     event = "InsertEnter",
-    config = function()
-      local autopairs = require("nvim-autopairs")
-      autopairs.setup({ check_ts = true })
-      local cmp_status, cmp = pcall(require, "cmp")
-      if cmp_status then
-        local cmp_autopairs = require("nvim-autopairs.completion.cmp")
-        cmp.event:on("confirm_done", cmp_autopairs.on_confirm_done())
-      end
-    end,
+    opts = { check_ts = true },
   },
 
   -- Surround (cs"' etc.)
@@ -94,7 +86,31 @@ return {
   {
     "folke/trouble.nvim",
     cmd = { "Trouble" },
-    opts = {},
+    event = "VeryLazy",
+    keys = {
+      {
+        "<BS>",
+        function()
+          require("config.trouble").toggle_focus()
+        end,
+        mode = "n",
+        desc = "View: Toggle Problems Focus",
+      },
+    },
+    opts = {
+      open_no_results = true,
+      warn_no_results = false,
+      keys = {
+        q = function()
+          require("config.trouble").toggle_focus()
+        end,
+        o = "jump",
+      },
+    },
+    config = function(_, opts)
+      require("trouble").setup(opts)
+      require("config.trouble").setup()
+    end,
   },
 
   -- TODO / FIXME comments highlighting

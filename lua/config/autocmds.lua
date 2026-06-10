@@ -65,5 +65,21 @@ vim.api.nvim_create_autocmd("FileType", {
     -- views (e.g. the LSP references quickfix list) close instead of erroring
     -- with E21 when stray edit keys hit a non-modifiable buffer.
     vim.keymap.set("n", "<Esc>", "<cmd>close<CR>", opts)
+
+    if vim.bo[event.buf].filetype == "qf" then
+      vim.keymap.set("n", "<CR>", function()
+        local index = vim.api.nvim_win_get_cursor(0)[1]
+        local items = vim.fn.getqflist({ items = 0 }).items
+        if not items[index] or items[index].valid ~= 1 then
+          return
+        end
+
+        vim.fn.setqflist({}, "a", { idx = index })
+        vim.cmd.close()
+        vim.cmd.cc()
+      end, vim.tbl_extend("force", opts, {
+        desc = "Quickfix: Open Selection",
+      }))
+    end
   end,
 })

@@ -1,124 +1,117 @@
 return {
   {
-    "hrsh7th/nvim-cmp",
+    "saghen/blink.cmp",
+    version = "1.*",
     event = "InsertEnter",
     dependencies = {
-      "hrsh7th/cmp-nvim-lsp",
-      "hrsh7th/cmp-buffer",
-      "hrsh7th/cmp-path",
-      "hrsh7th/cmp-cmdline",
-      "saadparwaiz1/cmp_luasnip",
-      {
-        "L3MON4D3/LuaSnip",
-        version = "v2.*",
-        build = "make install_jsregexp",
-        dependencies = { "rafamadriz/friendly-snippets" },
-        config = function()
-          require("luasnip.loaders.from_vscode").lazy_load()
-        end,
-      },
-      "onsails/lspkind.nvim",
+      "rafamadriz/friendly-snippets",
     },
-    config = function()
-      local cmp = require("cmp")
-      local luasnip = require("luasnip")
-      local lspkind = require("lspkind")
-
-      local has_words_before = function()
+    opts = function()
+      local function has_words_before()
         local line, col = unpack(vim.api.nvim_win_get_cursor(0))
-        return col ~= 0 and vim.api.nvim_buf_get_lines(0, line - 1, line, true)[1]:sub(col, col):match("%s") == nil
+        if col == 0 then
+          return false
+        end
+        local text = vim.api.nvim_buf_get_lines(0, line - 1, line, true)[1]
+        return text:sub(col, col):match("%s") == nil
       end
 
-      cmp.setup({
-        snippet = {
-          expand = function(args) luasnip.lsp_expand(args.body) end,
+      return {
+        keymap = {
+          preset = "none",
+          ["<PageUp>"] = { "scroll_documentation_up", "fallback" },
+          ["<PageDown>"] = { "scroll_documentation_down", "fallback" },
+          ["<C-Space>"] = { "show" },
+          ["<D-i>"] = { "show" },
+          ["<Esc>"] = { "cancel", "fallback" },
+          ["<CR>"] = { "select_and_accept", "fallback" },
+          ["<Up>"] = { "select_prev", "fallback" },
+          ["<Down>"] = { "select_next", "fallback" },
+          ["<C-p>"] = { "select_prev", "fallback_to_mappings" },
+          ["<C-n>"] = { "select_next", "fallback_to_mappings" },
+          ["<Tab>"] = {
+            function(cmp)
+              if cmp.is_visible() then
+                return cmp.select_next()
+              end
+            end,
+            "snippet_forward",
+            function(cmp)
+              if has_words_before() then
+                return cmp.show()
+              end
+            end,
+            "fallback",
+          },
+          ["<S-Tab>"] = {
+            function(cmp)
+              if cmp.is_visible() then
+                return cmp.select_prev()
+              end
+            end,
+            "snippet_backward",
+            "fallback",
+          },
         },
-        window = {
-          completion = cmp.config.window.bordered(),
-          documentation = cmp.config.window.bordered(),
-        },
-        mapping = cmp.mapping.preset.insert({
-          ["<PageUp>"] = cmp.mapping.scroll_docs(-4),
-          ["<PageDown>"] = cmp.mapping.scroll_docs(4),
-          ["<C-Space>"] = cmp.mapping.complete(),
-          ["<D-i>"] = cmp.mapping.complete(),
-          ["<Esc>"] = cmp.mapping.abort(),
-          ["<CR>"] = cmp.mapping(function(fallback)
-            if not cmp.visible() then
-              fallback()
-              return
-            end
-
-            local entry = cmp.get_selected_entry()
-            if not entry then
-              fallback()
-              return
-            end
-
-            local is_lsp = entry.source.name == "nvim_lsp"
-            cmp.confirm({ select = false })
-            if is_lsp then
-              vim.schedule(function()
-                if vim.fn.mode():match("^[is]") then
-                  vim.cmd.stopinsert()
-                end
-              end)
-            end
-          end, { "i", "s" }),
-          ["<Tab>"] = cmp.mapping(function(fallback)
-            if cmp.visible() then
-              cmp.select_next_item()
-            elseif luasnip.expand_or_locally_jumpable() then
-              luasnip.expand_or_jump()
-            elseif has_words_before() then
-              cmp.complete()
-            else
-              fallback()
-            end
-          end, { "i", "s" }),
-          ["<S-Tab>"] = cmp.mapping(function(fallback)
-            if cmp.visible() then
-              cmp.select_prev_item()
-            elseif luasnip.locally_jumpable(-1) then
-              luasnip.jump(-1)
-            else
-              fallback()
-            end
-          end, { "i", "s" }),
-        }),
-        sources = cmp.config.sources({
-          { name = "nvim_lsp", priority = 1000 },
-          { name = "luasnip",  priority = 750  },
-          { name = "buffer",   priority = 500  },
-          { name = "path",     priority = 250  },
-        }),
-        formatting = {
-          format = lspkind.cmp_format({
-            mode = "symbol_text",
-            maxwidth = 50,
-            ellipsis_char = "...",
-            menu = {
-              nvim_lsp = "[LSP]",
-              luasnip  = "[Snip]",
-              buffer   = "[Buf]",
-              path     = "[Path]",
+        completion = {
+          list = {
+            selection = {
+              preselect = false,
+              auto_insert = false,
             },
-          }),
+          },
+          menu = {
+            border = "rounded",
+            max_height = 12,
+            draw = {
+              columns = {
+                { "kind_icon" },
+                { "label", "label_description", gap = 1 },
+                { "source_name" },
+              },
+            },
+          },
+          documentation = {
+            auto_show = true,
+            auto_show_delay_ms = 300,
+            window = {
+              border = "rounded",
+            },
+          },
+          ghost_text = {
+            enabled = true,
+          },
         },
-        experimental = { ghost_text = true },
-      })
-
-      -- Cmdline completion
-      cmp.setup.cmdline({ "/", "?" }, {
-        enabled = false,
-      })
-      cmp.setup.cmdline(":", {
-        mapping = cmp.mapping.preset.cmdline(),
-        sources = cmp.config.sources(
-          { { name = "path" } },
-          { { name = "cmdline" } }
-        ),
-      })
+        signature = {
+          enabled = true,
+          window = {
+            border = "rounded",
+          },
+        },
+        sources = {
+          default = { "lsp", "snippets", "buffer", "path" },
+        },
+        cmdline = {
+          keymap = { preset = "cmdline" },
+          sources = function()
+            if vim.fn.getcmdtype() == ":" then
+              return { "cmdline", "path" }
+            end
+            return {}
+          end,
+          completion = {
+            menu = {
+              auto_show = function()
+                return vim.fn.getcmdtype() == ":"
+              end,
+            },
+          },
+        },
+        appearance = {
+          nerd_font_variant = "mono",
+        },
+      }
     end,
+    opts_extend = { "sources.default" },
   },
 }

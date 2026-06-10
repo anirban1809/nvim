@@ -27,6 +27,46 @@ local function goto_line()
   end)
 end
 
+local function goto_go_function_boundary(to_end)
+  local parser_ok, parser = pcall(vim.treesitter.get_parser, 0, "go")
+  if not parser_ok then
+    vim.notify("Go Treesitter parser is unavailable", vim.log.levels.INFO)
+    return
+  end
+  parser:parse()
+
+  local ok, node = pcall(vim.treesitter.get_node, { bufnr = 0 })
+  if not ok or not node then
+    vim.notify("No Go syntax node at cursor", vim.log.levels.INFO)
+    return
+  end
+
+  local function_types = {
+    function_declaration = true,
+    method_declaration = true,
+    func_literal = true,
+  }
+  while node and not function_types[node:type()] do
+    node = node:parent()
+  end
+  if not node then
+    vim.notify("Cursor is not inside a Go function", vim.log.levels.INFO)
+    return
+  end
+
+  local start_row, start_col, end_row, end_col = node:range()
+  if not to_end then
+    vim.api.nvim_win_set_cursor(0, { start_row + 1, start_col })
+    return
+  end
+
+  if end_col == 0 then
+    end_row = end_row - 1
+    end_col = #(vim.api.nvim_buf_get_lines(0, end_row, end_row + 1, false)[1] or "")
+  end
+  vim.api.nvim_win_set_cursor(0, { end_row + 1, math.max(0, end_col - 1) })
+end
+
 local function focus_window(index)
   local win = vim.fn.win_getid(index)
   if win ~= 0 then
@@ -34,10 +74,20 @@ local function focus_window(index)
   end
 end
 
+local function selected_search_pattern()
+  local lines = vim.fn.getregion(vim.fn.getpos("v"), vim.fn.getpos("."), {
+    type = vim.fn.mode(),
+  })
+  local text = vim.fn.escape(table.concat(lines, "\n"), "\\/"):gsub("\n", "\\n")
+  return "\\V" .. text
+end
+
+local function prompt_search_selection()
+  return "/" .. selected_search_pattern()
+end
+
 local function search_selection()
-  vim.cmd.normal({ args = { '"zy' }, bang = true })
-  local text = vim.fn.getreg("z"):gsub("\n", "\\n")
-  vim.fn.setreg("/", "\\V" .. vim.fn.escape(text, "\\"))
+  vim.fn.setreg("/", selected_search_pattern())
   vim.cmd.normal({ args = { "n" }, bang = true })
 end
 
@@ -80,6 +130,39 @@ local function reopen_closed_file()
     end
   end
   vim.notify("No recently closed file", vim.log.levels.INFO)
+end
+
+local function cycle_open_buffer(direction)
+  local target_win = vim.api.nvim_get_current_win()
+  local current_buf = vim.api.nvim_win_get_buf(target_win)
+  if vim.bo[current_buf].buftype ~= "" then
+    local ok, trouble = pcall(require, "config.trouble")
+    target_win = ok and trouble.editor_window() or nil
+  end
+  if not target_win or not vim.api.nvim_win_is_valid(target_win) then
+    return
+  end
+
+  local buffers = {}
+  for _, info in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
+    if vim.api.nvim_buf_is_valid(info.bufnr) and vim.bo[info.bufnr].buftype == "" then
+      buffers[#buffers + 1] = info.bufnr
+    end
+  end
+  if #buffers < 2 then
+    return
+  end
+  table.sort(buffers)
+
+  current_buf = vim.api.nvim_win_get_buf(target_win)
+  local current_index = vim.fn.index(buffers, current_buf)
+  if current_index < 0 then
+    current_index = direction > 0 and -1 or 0
+  end
+  local next_index = ((current_index + direction) % #buffers) + 1
+
+  vim.api.nvim_set_current_win(target_win)
+  vim.api.nvim_win_set_buf(target_win, buffers[next_index])
 end
 
 -- Leave insert mode, then write the buffer. Only saves real, modified, writable
@@ -128,6 +211,18 @@ map("n", "<C-Tab>", "<cmd>bnext<CR>", "View: Open Next Editor")
 map("n", "<C-S-Tab>", "<cmd>bprevious<CR>", "View: Open Previous Editor")
 map("n", "<D-S-]>", "<cmd>bnext<CR>", "View: Open Next Editor")
 map("n", "<D-S-[>", "<cmd>bprevious<CR>", "View: Open Previous Editor")
+map("n", "-", function()
+  cycle_open_buffer(-1)
+end, "View: Open Previous Editor")
+map("n", "+", function()
+  cycle_open_buffer(1)
+end, "View: Open Next Editor")
+map("n", "<S-=>", function()
+  cycle_open_buffer(1)
+end, "View: Open Next Editor")
+map("n", "=", function()
+  cycle_open_buffer(1)
+end, "View: Open Next Editor")
 map("n", "<D-,>", function()
   vim.cmd.edit(vim.fn.stdpath("config") .. "/init.lua")
 end, "Preferences: Open Settings")
@@ -135,7 +230,9 @@ end, "Preferences: Open Settings")
 -- Search and navigation
 map("n", "<D-f>", "/", "Find")
 map("i", "<D-f>", "<Esc>/", "Find")
-map("x", "<D-f>", search_selection, "Find Selection")
+map("n", "/", "<cmd>Telescope current_buffer_fuzzy_find<CR>", "Find in Current Buffer")
+map("x", "<D-f>", prompt_search_selection, "Find Selection", { expr = true, replace_keycodes = false })
+map("x", "/", prompt_search_selection, "Find Selection", { expr = true, replace_keycodes = false })
 map("n", "<D-e>", "*", "Find With Selection")
 map("x", "<D-e>", search_selection, "Find With Selection")
 map("n", "<Tab>", "nzzzv", "Find Next")
@@ -152,15 +249,28 @@ map("n", "<M-D-f>", ":%s/", "Replace")
 map("x", "<M-D-f>", ":s/", "Replace in Selection")
 map("n", "<D-t>", "<cmd>Telescope lsp_workspace_symbols<CR>", "Go to Symbol in Workspace")
 map("n", "<D-S-o>", "<cmd>Telescope lsp_document_symbols<CR>", "Go to Symbol in Editor")
+map("n", ".", "<cmd>Telescope lsp_document_symbols<CR>", "Go to Symbol in Editor")
 map("n", "<C-g>", goto_line, "Go to Line")
 map("n", "<C-->", "<C-o>", "Go Back")
 map("n", "<C-S-->", "<C-i>", "Go Forward")
+vim.api.nvim_create_autocmd("FileType", {
+  group = vim.api.nvim_create_augroup("go_function_boundary_keymaps", { clear = true }),
+  pattern = "go",
+  callback = function(event)
+    map("n", "'", function()
+      goto_go_function_boundary(false)
+    end, "Go: Function Start", { buffer = event.buf })
+    map("n", ";", function()
+      goto_go_function_boundary(true)
+    end, "Go: Function End", { buffer = event.buf })
+  end,
+})
 
 -- Workbench
-map("n", "<D-b>", "<cmd>NvimTreeToggle<CR>", "View: Toggle Primary Side Bar")
-map("n", "<D-S-e>", "<cmd>NvimTreeFocus<CR>", "View: Show Explorer")
 map("n", "<C-S-g>", "<cmd>Telescope git_status<CR>", "View: Show Source Control")
-map("n", "<D-S-m>", "<cmd>Trouble diagnostics toggle<CR>", "View: Show Problems")
+map("n", "<D-S-m>", function()
+  require("config.trouble").toggle_focus()
+end, "View: Toggle Problems Focus")
 map({ "n", "t" }, "<D-j>", "<cmd>ToggleTerm direction=horizontal<CR>", "View: Toggle Panel")
 map({ "n", "t" }, "<C-S-`>", "<cmd>ToggleTerm direction=horizontal<CR>", "Terminal: New Terminal")
 
@@ -171,7 +281,6 @@ map("n", "<D-k><D-Left>", "<C-w>h", "View: Focus Left Group")
 map("n", "<D-k><D-Down>", "<C-w>j", "View: Focus Below Group")
 map("n", "<D-k><D-Up>", "<C-w>k", "View: Focus Above Group")
 map("n", "<D-k><D-Right>", "<C-w>l", "View: Focus Right Group")
-map("n", "<D-0>", "<cmd>NvimTreeFocus<CR>", "View: Focus Side Bar")
 for index = 1, 8 do
   map("n", "<D-" .. index .. ">", function()
     focus_window(index)

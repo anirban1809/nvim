@@ -1,44 +1,79 @@
-# Neovim Configuration
+# Portable Neovim Configuration for macOS
 
-A personal Neovim setup built on [lazy.nvim](https://github.com/folke/lazy.nvim),
-with LSP, Treesitter, Telescope, completion, formatting, and DAP debugging
-(Go, C/C++/Rust, JS/TS) configured out of the box.
+This repository contains the complete Neovim configuration, including all
+keymaps, plugins, LSP settings, formatting, persistent breakpoints, restored
+buffers, ThemeHub, Trouble, Blink completion, and DAP support for Go, C/C++,
+Rust, and JavaScript/TypeScript.
 
-## Requirements
+Plugin revisions are pinned in `lazy-lock.json`. Host dependencies are declared
+in `Brewfile`; LSP servers, formatters, debug adapters, and Tree-sitter parsers
+are installed by the bootstrap script.
 
-- **Neovim ≥ 0.11** (developed on 0.12)
-- `git`, `make`, and a C compiler — for building Treesitter parsers and
-  `telescope-fzf-native`
-- [`ripgrep`](https://github.com/BurntSushi/ripgrep) and
-  [`fd`](https://github.com/sharkdp/fd) — used by Telescope
-- A [Nerd Font](https://www.nerdfonts.com/) for icons
+## Install on another Mac
 
-Language tooling (LSP servers, debug adapters, formatters) is installed
-automatically via [Mason](https://github.com/williamboman/mason.nvim).
-
-## Install
-
-Back up any existing configuration first:
+The bootstrap supports Apple Silicon and Intel Macs. It does not overwrite an
+existing `~/.config/nvim`.
 
 ```sh
-mv ~/.config/nvim ~/.config/nvim.bak 2>/dev/null
+git clone https://github.com/anirban1809/nvim.git ~/src/nvim-config
+~/src/nvim-config/scripts/bootstrap-macos.sh
 ```
 
-Then clone this repository into place and launch Neovim:
+The script:
 
-```sh
-git clone <repository-url> ~/.config/nvim
-nvim
+1. Checks for the Xcode Command Line Tools.
+2. Installs Homebrew when necessary.
+3. Installs Neovim, Git, search/build tools, Go, Node.js, Rustup, and a Nerd Font.
+4. Adds Homebrew and its keg-only Rustup installation to `~/.zprofile`.
+5. Links the checkout to `${XDG_CONFIG_HOME:-~/.config}/nvim`.
+6. Installs the pinned plugins, Mason tools, and Tree-sitter parsers.
+
+If the Xcode Command Line Tools prompt appears, finish that installation and
+run the script again.
+
+## Verify
+
+Open Neovim and run:
+
+```vim
+:checkhealth portable
+:checkhealth
 ```
 
-On first launch, lazy.nvim bootstraps itself and installs all plugins. The
-pinned versions in `lazy-lock.json` are used for a reproducible setup.
+The first command reports the dependencies specific to this configuration.
 
-## Layout
+## What moves with the repository
 
+- Every Lua configuration and keymap
+- The complete plugin list and pinned plugin revisions
+- The default Tokyo Night theme and ThemeHub integration
+- Mason's required tool list
+- Tree-sitter's required parser list
+- The macOS dependency manifest and bootstrap script
+
+## Machine-local state
+
+The following data is intentionally regenerated on each Mac:
+
+- Plugins: `stdpath("data")/lazy`
+- Mason packages: `stdpath("data")/mason`
+- Tree-sitter parsers: installed with the plugins
+- ThemeHub downloads and selected theme: `stdpath("data")/theme-hub`
+- Open-buffer history: `stdpath("state")/open-buffers.json`
+- Persistent breakpoints: `stdpath("state")/dap-breakpoints.json`
+
+Open buffers and breakpoints contain absolute project paths, so copying them
+between Macs would make the installation less portable. ThemeHub persistence
+starts from the tracked `tokyonight-storm` default; subsequent selections are
+persisted on that Mac.
+
+## Updating
+
+Update plugins deliberately and commit the resulting lockfile:
+
+```vim
+:Lazy update
 ```
-init.lua            -- entry point
-lazy-lock.json      -- pinned plugin versions
-lua/config/         -- options, keymaps, autocmds, lazy bootstrap
-lua/plugins/        -- one spec per concern (lsp, treesitter, telescope, dap, …)
-```
+
+Re-run `scripts/bootstrap-macos.sh` after changing `Brewfile`, Mason's tool
+list, or Tree-sitter's parser list.

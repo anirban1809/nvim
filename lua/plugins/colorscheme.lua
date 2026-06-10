@@ -129,15 +129,13 @@ return {
       transparent_background = false,
       term_colors = true,
       integrations = {
-        cmp = true,
+        blink_cmp = { enabled = true, style = "bordered" },
         gitsigns = true,
-        nvimtree = true,
         treesitter = true,
         telescope = { enabled = true },
         mason = true,
         which_key = true,
         dap = true,
-        dap_ui = true,
         native_lsp = {
           enabled = true,
           virtual_text = {
@@ -158,4 +156,26 @@ return {
     },
   },
   { "rebelot/kanagawa.nvim", lazy = true },
+  {
+    "Erl-koenig/theme-hub.nvim",
+    lazy = false,
+    priority = 900,
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "rktjmp/lush.nvim",
+    },
+    keys = {
+      {
+        "<D-k><D-i>",
+        "<cmd>ThemeHub<CR>",
+        desc = "Preferences: Install Color Theme",
+      },
+    },
+    opts = {
+      install_dir = vim.fn.stdpath("data") .. "/theme-hub",
+      auto_install_on_select = true,
+      apply_after_install = true,
+      persistent = true,
+    },
+  },
 }
