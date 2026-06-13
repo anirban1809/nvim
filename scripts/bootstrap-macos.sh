@@ -93,7 +93,7 @@ if [ -d "$HOME/.cargo/bin" ]; then
 fi
 
 current_step="host dependency verification"
-for command_name in nvim git make cc rg fd go node npm; do
+for command_name in nvim git make cc rg fd go node npm tree-sitter; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     printf 'Required command is unavailable after installation: %s\n' "$command_name" >&2
     exit 1
@@ -109,8 +109,6 @@ run_nvim() {
 }
 
 run_nvim "Installing pinned Neovim plugins" "+Lazy! sync" +qa
-run_nvim "Installing Tree-sitter parsers" \
-  "+Lazy load nvim-treesitter" "+TSUpdateSync" +qa
 run_nvim "Installing LSP servers, formatters, and debug adapters" \
   "+Lazy load nvim-lspconfig" "+MasonToolsInstallSync" +qa
 

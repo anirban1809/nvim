@@ -58,6 +58,8 @@ return {
     },
     config = function()
       local dap = require("dap")
+      local dap_view = require("dap-view")
+      local dap_view_state = require("dap-view.state")
       local vscode = require("dap.ext.vscode")
       local debug_focus_buffers = {}
       local last_editor_win
@@ -74,17 +76,16 @@ return {
       end
 
       local function focus_debugger()
-        local state = require("dap-view.state")
         local current_win = vim.api.nvim_get_current_win()
         if not is_debug_window(current_win) then
           last_editor_win = current_win
         end
 
-        if not state.winnr or not vim.api.nvim_win_is_valid(state.winnr) then
-          require("dap-view").open()
+        if not dap_view_state.winnr or not vim.api.nvim_win_is_valid(dap_view_state.winnr) then
+          dap_view.open()
         end
-        if state.winnr and vim.api.nvim_win_is_valid(state.winnr) then
-          vim.api.nvim_set_current_win(state.winnr)
+        if dap_view_state.winnr and vim.api.nvim_win_is_valid(dap_view_state.winnr) then
+          vim.api.nvim_set_current_win(dap_view_state.winnr)
         end
       end
 
@@ -103,6 +104,7 @@ return {
         vim.keymap.set("n", "d", focus_debugger, {
           buffer = bufnr,
           silent = true,
+          nowait = true,
           desc = "Debug: Focus Debugger",
         })
         debug_focus_buffers[bufnr] = true
@@ -144,6 +146,7 @@ return {
               vim.keymap.set("n", "d", focus_editor, {
                 buffer = event.buf,
                 silent = true,
+                nowait = true,
                 desc = "Debug: Focus Editor",
               })
             end
@@ -353,7 +356,6 @@ return {
 
       local function set_go_debug_keymaps(bufnr)
         local opts = { buffer = bufnr, silent = true }
-        vim.keymap.set("n", "0", dap.terminate, vim.tbl_extend("force", opts, { desc = "Debug: Stop" }))
         vim.keymap.set("n", "1", dap.step_over, vim.tbl_extend("force", opts, { desc = "Debug: Step Over" }))
         vim.keymap.set("n", "2", dap.step_into, vim.tbl_extend("force", opts, { desc = "Debug: Step Into" }))
         vim.keymap.set("n", "3", dap.step_out, vim.tbl_extend("force", opts, { desc = "Debug: Step Out" }))

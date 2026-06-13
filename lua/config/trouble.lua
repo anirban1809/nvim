@@ -53,6 +53,68 @@ function M.close()
   end
 end
 
+function M.next_error()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local diagnostics = vim.diagnostic.get(bufnr, {
+    severity = vim.diagnostic.severity.ERROR,
+  })
+  if #diagnostics == 0 then
+    vim.notify("No errors in the current file", vim.log.levels.INFO)
+    return
+  end
+
+  table.sort(diagnostics, function(left, right)
+    return left.lnum < right.lnum
+      or (left.lnum == right.lnum and left.col < right.col)
+  end)
+
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local current_row, current_col = cursor[1] - 1, cursor[2]
+  local target = diagnostics[1]
+  for _, diagnostic in ipairs(diagnostics) do
+    if diagnostic.lnum > current_row
+      or (diagnostic.lnum == current_row and diagnostic.col > current_col) then
+      target = diagnostic
+      break
+    end
+  end
+
+  vim.api.nvim_win_set_cursor(0, { target.lnum + 1, target.col })
+  vim.cmd.normal({ args = { "zz" }, bang = true })
+  vim.diagnostic.open_float(bufnr, {
+    scope = "cursor",
+    focus = false,
+    border = "rounded",
+    source = true,
+    header = "",
+    prefix = "",
+  })
+end
+
+function M.toggle()
+  local win = trouble_window()
+  if win then
+    local current_win = vim.api.nvim_get_current_win()
+    M.close()
+    if is_trouble_window(current_win)
+      and last_editor_win
+      and vim.api.nvim_win_is_valid(last_editor_win) then
+      vim.api.nvim_set_current_win(last_editor_win)
+    end
+    return
+  end
+
+  if debugging() then
+    return
+  end
+
+  local current_win = vim.api.nvim_get_current_win()
+  if not is_debug_window(current_win) then
+    last_editor_win = current_win
+  end
+  require("trouble").open({ mode = "diagnostics", focus = true })
+end
+
 function M.toggle_focus()
   local current_win = vim.api.nvim_get_current_win()
   if is_trouble_window(current_win) then
@@ -85,18 +147,6 @@ function M.debug_started()
 end
 
 function M.debug_stopped()
-  local attempts = 0
-  local function restore()
-    if not debugging() then
-      M.open()
-      return
-    end
-    attempts = attempts + 1
-    if attempts < 10 then
-      vim.defer_fn(restore, 100)
-    end
-  end
-  vim.defer_fn(restore, 100)
 end
 
 function M.setup()
@@ -120,7 +170,6 @@ function M.setup()
     last_editor_win = current_win
   end
 
-  vim.schedule(M.open)
 end
 
 return M

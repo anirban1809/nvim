@@ -95,18 +95,48 @@ local function select_current_word()
   vim.cmd.normal({ args = { "viw" }, bang = true })
 end
 
-local function select_adjacent_word(direction)
-  local anchor = vim.fn.getpos("v")
-  local cursor = vim.api.nvim_win_get_cursor(0)
-  local anchor_pos = { anchor[2], anchor[3] - 1 }
-  local cursor_before_anchor = cursor[1] < anchor_pos[1]
-    or (cursor[1] == anchor_pos[1] and cursor[2] < anchor_pos[2])
-  local start_pos = cursor_before_anchor and cursor or anchor_pos
-  local end_pos = cursor_before_anchor and anchor_pos or cursor
+local function select_quoted_text()
+  local line = vim.api.nvim_get_current_line()
+  local cursor_col = vim.api.nvim_win_get_cursor(0)[2] + 1
+  local candidates = {}
 
-  vim.cmd.normal({ args = { vim.keycode("<Esc>") }, bang = true })
-  vim.api.nvim_win_set_cursor(0, direction > 0 and end_pos or start_pos)
-  vim.cmd.normal({ args = { direction > 0 and "wviw" or "bviw" }, bang = true })
+  for _, quote in ipairs({ '"', "'" }) do
+    local opening
+    local escaped = false
+
+    for col = 1, #line do
+      local char = line:sub(col, col)
+      if char == "\\" then
+        escaped = not escaped
+      else
+        if char == quote and not escaped then
+          if opening then
+            if opening <= cursor_col and cursor_col <= col then
+              candidates[#candidates + 1] = { opening, col }
+            end
+            opening = nil
+          else
+            opening = col
+          end
+        end
+        escaped = false
+      end
+    end
+  end
+
+  table.sort(candidates, function(left, right)
+    return left[2] - left[1] < right[2] - right[1]
+  end)
+
+  local bounds = candidates[1]
+  if not bounds or bounds[2] - bounds[1] <= 1 then
+    return
+  end
+
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  vim.api.nvim_win_set_cursor(0, { row, bounds[1] })
+  vim.cmd.normal({ args = { "v" }, bang = true })
+  vim.api.nvim_win_set_cursor(0, { row, bounds[2] - 2 })
 end
 
 local function extend_word_selection(direction)
@@ -166,16 +196,10 @@ local function cycle_open_buffer(direction)
     return
   end
 
-  local buffers = {}
-  for _, info in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
-    if vim.api.nvim_buf_is_valid(info.bufnr) and vim.bo[info.bufnr].buftype == "" then
-      buffers[#buffers + 1] = info.bufnr
-    end
-  end
+  local buffers = require("config.buffers").listed_file_buffers()
   if #buffers < 2 then
     return
   end
-  table.sort(buffers)
 
   current_buf = vim.api.nvim_win_get_buf(target_win)
   local current_index = vim.fn.index(buffers, current_buf)
@@ -221,8 +245,8 @@ map(editor_modes, "<D-o>", "<cmd>Telescope find_files<CR>", "File: Open")
 map(editor_modes, "<D-p>", "<cmd>Telescope find_files<CR>", "Go to File")
 map(editor_modes, "<D-S-p>", "<cmd>Telescope commands<CR>", "Show All Commands")
 map(editor_modes, "<F1>", "<cmd>Telescope commands<CR>", "Show All Commands")
-map("n", "<D-w>", "<cmd>confirm bdelete<CR>", "View: Close Editor")
-map(editor_modes, "<D-S-x>", "<cmd>confirm bdelete<CR>", "View: Close Editor")
+map("n", "<D-w>", require("config.buffers").close_current, "View: Close Editor")
+map(editor_modes, "<D-S-x>", require("config.buffers").close_current, "View: Close Editor")
 map("t", "<D-w>", "<C-\\><C-n><cmd>close<CR>", "View: Close Terminal")
 map("n", "<D-S-w>", "<cmd>confirm qall<CR>", "Window: Close")
 -- `:exit` -> save every buffer and quit, without prompts.
@@ -294,6 +318,11 @@ map("n", "<C-S-g>", "<cmd>Telescope git_status<CR>", "View: Show Source Control"
 map("n", "<D-S-m>", function()
   require("config.trouble").toggle_focus()
 end, "View: Toggle Problems Focus")
+local function next_file_error()
+  require("config.trouble").next_error()
+end
+map("n", "0", next_file_error, "Problems: Next Error in Current File")
+map("n", "<k0>", next_file_error, "Problems: Next Error in Current File")
 map({ "n", "t" }, "<D-j>", "<cmd>ToggleTerm direction=horizontal<CR>", "View: Toggle Panel")
 map({ "n", "t" }, "<C-S-`>", "<cmd>ToggleTerm direction=horizontal<CR>", "Terminal: New Terminal")
 
@@ -333,14 +362,8 @@ map("n", "<D-l>", "V", "Expand Line Selection")
 map("x", "<D-l>", function()
   return vim.fn.mode() == "V" and "j" or "V"
 end, "Expand Line Selection", { expr = true })
-map("n", "w", select_current_word, "Select Current Word")
-map("x", "w", function()
-  select_adjacent_word(1)
-end, "Select Next Word")
-map("n", "q", select_current_word, "Select Current Word")
-map("x", "q", function()
-  select_adjacent_word(-1)
-end, "Select Previous Word")
+map("n", "w", "w", "Cursor Next Word")
+map("n", "q", "b", "Cursor Previous Word")
 map("n", "W", select_current_word, "Select Current Word")
 map("x", "W", function()
   extend_word_selection(1)
@@ -349,11 +372,17 @@ map("n", "Q", select_current_word, "Select Current Word")
 map("x", "Q", function()
   extend_word_selection(-1)
 end, "Extend Selection to Previous Word")
-map("n", "{", "va{", "Select Enclosing Braces")
-map("n", "(", "va(", "Select Enclosing Parentheses")
-map("n", "[", "va[", "Select Enclosing Brackets")
+map("n", '"', select_quoted_text, "Select Text Inside Quotes")
+map("n", "{", "vi{", "Select Inside Braces")
+map("n", "(", "vi(", "Select Inside Parentheses")
+map("n", "[", "vi[", "Select Inside Brackets")
+map("x", "(", "S)", "Surround Selection With Parentheses", { remap = true })
+map("x", "{", "S}", "Surround Selection With Braces", { remap = true })
+map("x", "[", "S]", "Surround Selection With Brackets", { remap = true })
 
 -- Cursor movement
+map("n", "<Home>", "0i", "Edit at Beginning of Line")
+map("n", "<End>", "A", "Edit at End of Line")
 map("n", "<D-Left>", "b", "Cursor Word Left")
 map("n", "<D-Right>", "w", "Cursor Word Right")
 map("n", "<D-Up>", "gg", "Cursor Top")
@@ -421,6 +450,12 @@ end, "Select Line Up", { expr = true })
 map("x", "<S-Down>", function()
   return vim.fn.mode() == "V" and "j" or "Vj"
 end, "Select Line Down", { expr = true })
+map("n", "<M-Left>", "v0", "Select to Beginning of Line")
+map("n", "<M-Right>", "v$", "Select to End of Line")
+map("i", "<M-Left>", "<Esc>v0", "Select to Beginning of Line")
+map("i", "<M-Right>", "<Esc>v$", "Select to End of Line")
+map("x", "<M-Left>", "0", "Extend Selection to Beginning of Line")
+map("x", "<M-Right>", "$", "Extend Selection to End of Line")
 
 -- Line editing
 map("n", "<M-Down>", "<cmd>move .+1<CR>==", "Move Line Down")

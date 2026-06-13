@@ -87,22 +87,12 @@ return {
     "folke/trouble.nvim",
     cmd = { "Trouble" },
     event = "VeryLazy",
-    keys = {
-      {
-        "<BS>",
-        function()
-          require("config.trouble").toggle_focus()
-        end,
-        mode = "n",
-        desc = "View: Toggle Problems Focus",
-      },
-    },
     opts = {
       open_no_results = true,
       warn_no_results = false,
       keys = {
         q = function()
-          require("config.trouble").toggle_focus()
+          require("config.trouble").toggle()
         end,
         o = "jump",
       },

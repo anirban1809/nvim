@@ -7,8 +7,8 @@ vim.opt.runtimepath = vim.tbl_filter(function(path)
   return not vim.startswith(vim.fs.normalize(path), legacy_pack_root)
 end, vim.opt.runtimepath:get())
 
-if vim.fn.has("nvim-0.11") == 0 then
-  error("This configuration requires Neovim 0.11 or newer")
+if vim.fn.has("nvim-0.12") == 0 then
+  error("This configuration requires Neovim 0.12 or newer")
 end
 
 -- Entry point. Order matters: options/keymaps before plugins.

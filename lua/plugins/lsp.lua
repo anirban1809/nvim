@@ -38,7 +38,8 @@ return {
 
       -- Diagnostics UI
       vim.diagnostic.config({
-        virtual_text     = { prefix = "●", spacing = 2 },
+        virtual_text     = false,
+        virtual_lines    = false,
         signs            = true,
         underline        = true,
         update_in_insert = false,
@@ -49,6 +50,25 @@ return {
           header = "",
           prefix = "",
         },
+      })
+
+      -- Show diagnostic text only when the cursor rests on the diagnostic.
+      vim.api.nvim_create_autocmd("CursorHold", {
+        group = vim.api.nvim_create_augroup("user_diagnostic_float", { clear = true }),
+        callback = function(event)
+          if vim.bo[event.buf].buftype ~= "" then
+            return
+          end
+
+          vim.diagnostic.open_float(event.buf, {
+            scope = "cursor",
+            focus = false,
+            border = "rounded",
+            source = true,
+            header = "",
+            prefix = "",
+          })
+        end,
       })
 
       -- Pretty signs
@@ -68,16 +88,91 @@ return {
         return orig_sig(vim.tbl_deep_extend("force", { border = "rounded" }, opts or {}))
       end
 
+      local hover_timer = vim.uv.new_timer()
+      local function stop_hover_timer()
+        if hover_timer then
+          hover_timer:stop()
+        end
+      end
+
+      local function diagnostic_at_cursor(bufnr, row, col)
+        for _, diagnostic in ipairs(vim.diagnostic.get(bufnr, { lnum = row })) do
+          local end_col = diagnostic.end_col or diagnostic.col
+          if diagnostic.col <= col and col <= end_col then
+            return true
+          end
+        end
+        return false
+      end
+
+      local function schedule_type_hover()
+        stop_hover_timer()
+
+        if vim.fn.mode() ~= "n" or vim.bo.buftype ~= "" then
+          return
+        end
+
+        local win = vim.api.nvim_get_current_win()
+        local bufnr = vim.api.nvim_get_current_buf()
+        local cursor = vim.api.nvim_win_get_cursor(win)
+
+        hover_timer:start(1000, 0, vim.schedule_wrap(function()
+          if not vim.api.nvim_win_is_valid(win)
+            or not vim.api.nvim_buf_is_valid(bufnr)
+            or vim.api.nvim_get_current_win() ~= win
+            or vim.api.nvim_get_current_buf() ~= bufnr
+            or vim.fn.mode() ~= "n"
+            or not vim.deep_equal(vim.api.nvim_win_get_cursor(win), cursor) then
+            return
+          end
+
+          local row, col = cursor[1] - 1, cursor[2]
+          local line = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
+          local char = vim.fn.matchstr(line:sub(col + 1), "^.")
+          if char == "" or vim.fn.match(char, [[\k]]) ~= 0 then
+            return
+          end
+
+          if diagnostic_at_cursor(bufnr, row, col) then
+            return
+          end
+
+          for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
+            if client:supports_method("textDocument/hover") then
+              vim.lsp.buf.hover()
+              return
+            end
+          end
+        end))
+      end
+
+      vim.api.nvim_create_autocmd({ "CursorMoved", "BufEnter", "WinEnter", "InsertLeave" }, {
+        group = vim.api.nvim_create_augroup("user_lsp_type_hover", { clear = true }),
+        callback = schedule_type_hover,
+      })
+      vim.api.nvim_create_autocmd({ "InsertEnter", "BufLeave", "WinLeave" }, {
+        group = "user_lsp_type_hover",
+        callback = stop_hover_timer,
+      })
+
       -- Per-buffer LSP keymaps
       vim.api.nvim_create_autocmd("LspAttach", {
         group = vim.api.nvim_create_augroup("user_lsp_attach", { clear = true }),
         callback = function(event)
           local bufnr = event.buf
-          local map = function(mode, lhs, rhs, desc)
-            vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, desc = "LSP: " .. desc })
+          local map = function(mode, lhs, rhs, desc, opts)
+            vim.keymap.set(mode, lhs, rhs, vim.tbl_extend("force", {
+              buffer = bufnr,
+              desc = "LSP: " .. desc,
+            }, opts or {}))
           end
 
-          map("n", "g", vim.lsp.buf.definition, "Go to Definition")
+          local function go_to_definition()
+            stop_hover_timer()
+            vim.lsp.buf.definition()
+          end
+
+          map("n", "g", go_to_definition, "Go to Definition", { nowait = true })
           map("n", "<F12>", vim.lsp.buf.definition, "Go to Definition")
           map("n", "<D-F12>", vim.lsp.buf.implementation, "Go to Implementation")
           map("n", "<S-F12>", require("config.lsp_references").open, "Go to References")
@@ -97,11 +192,7 @@ return {
             vim.diagnostic.jump({ count = 1, float = true })
           end, "Next Problem in File")
 
-          -- Inlay hints (Neovim 0.10+)
-          local client = vim.lsp.get_client_by_id(event.data.client_id)
-          if client and client:supports_method("textDocument/inlayHint") then
-            vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
-          end
+          vim.lsp.inlay_hint.enable(false, { bufnr = bufnr })
         end,
       })
 

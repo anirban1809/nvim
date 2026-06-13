@@ -1,6 +1,6 @@
 local M = {}
 
-M.host_commands = { "nvim", "git", "make", "cc", "rg", "fd", "go", "node", "npm" }
+M.host_commands = { "nvim", "git", "make", "cc", "rg", "fd", "go", "node", "npm", "tree-sitter" }
 
 M.mason_tools = {
   "clang-format",
@@ -23,7 +23,7 @@ M.mason_tools = {
 M.treesitter_parsers = {
   "bash", "c", "cpp", "cmake", "css", "diff", "dockerfile",
   "go", "gomod", "gosum", "gowork",
-  "html", "javascript", "json", "jsonc", "lua", "luadoc",
+  "html", "javascript", "json", "lua", "luadoc",
   "make", "markdown", "markdown_inline", "python",
   "regex", "rust", "toml", "tsx", "typescript",
   "vim", "vimdoc", "yaml",

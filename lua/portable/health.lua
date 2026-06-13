@@ -34,7 +34,7 @@ function M.check()
   end
 
   vim.health.start("Host dependencies")
-  check_executables({ "git", "make", "cc", "rg", "fd" }, true)
+  check_executables({ "git", "make", "cc", "rg", "fd", "tree-sitter" }, true)
 
   vim.health.start("Language runtimes")
   check_executables({ "go", "node", "npm", "cargo", "rustc" }, false)

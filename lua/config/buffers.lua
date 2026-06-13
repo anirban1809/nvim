@@ -2,6 +2,49 @@ local M = {}
 
 local storage_path = vim.fs.joinpath(vim.fn.stdpath("state"), "open-buffers.json")
 
+function M.listed_file_buffers()
+  local buffers = {}
+  for _, info in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
+    if vim.api.nvim_buf_is_valid(info.bufnr) and vim.bo[info.bufnr].buftype == "" then
+      buffers[#buffers + 1] = info.bufnr
+    end
+  end
+  table.sort(buffers)
+  return buffers
+end
+
+local function adjacent_buffer(bufnr)
+  local buffers = M.listed_file_buffers()
+  local index = vim.fn.index(buffers, bufnr) + 1
+  if index == 0 then
+    return
+  end
+  return buffers[index + 1] or buffers[index - 1]
+end
+
+function M.close_current()
+  local win = vim.api.nvim_get_current_win()
+  local current_buf = vim.api.nvim_get_current_buf()
+  if vim.bo[current_buf].buftype ~= "" then
+    vim.cmd.close()
+    return
+  end
+
+  local target_buf = adjacent_buffer(current_buf)
+  vim.cmd("confirm bdelete " .. current_buf)
+  if vim.api.nvim_buf_is_valid(current_buf) and vim.bo[current_buf].buflisted then
+    return
+  end
+
+  if target_buf
+    and vim.api.nvim_buf_is_valid(target_buf)
+    and vim.bo[target_buf].buflisted
+    and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_win_set_buf(win, target_buf)
+    vim.api.nvim_set_current_win(win)
+  end
+end
+
 local function buffer_path(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr)
     or not vim.bo[bufnr].buflisted
@@ -171,9 +214,34 @@ function M.setup()
       end
     end,
   })
-  vim.api.nvim_create_autocmd({ "BufAdd", "BufDelete", "BufEnter" }, {
+  vim.api.nvim_create_autocmd({ "BufAdd", "BufEnter" }, {
     group = group,
     callback = schedule_save,
+  })
+  vim.api.nvim_create_autocmd("BufDelete", {
+    group = group,
+    callback = function(event)
+      local affected_windows = {}
+      for _, win in ipairs(vim.api.nvim_list_wins()) do
+        if vim.api.nvim_win_get_buf(win) == event.buf then
+          affected_windows[#affected_windows + 1] = win
+        end
+      end
+      local target_buf = vim.bo[event.buf].buftype == "" and adjacent_buffer(event.buf) or nil
+
+      vim.schedule(function()
+        if target_buf
+          and vim.api.nvim_buf_is_valid(target_buf)
+          and vim.bo[target_buf].buflisted then
+          for _, win in ipairs(affected_windows) do
+            if vim.api.nvim_win_is_valid(win) then
+              vim.api.nvim_win_set_buf(win, target_buf)
+            end
+          end
+        end
+      end)
+      schedule_save()
+    end,
   })
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = group,
