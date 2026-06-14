@@ -63,6 +63,8 @@ return {
       local vscode = require("dap.ext.vscode")
       local debug_focus_buffers = {}
       local last_editor_win
+      local go_module_directory
+      local go_main_directory
 
       local function is_debug_window(win)
         if not win or not vim.api.nvim_win_is_valid(win) then
@@ -72,7 +74,10 @@ return {
           return true
         end
         local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
-        return filetype == "dap-view" or filetype == "dap-view-hover" or filetype == "dap-repl"
+        return filetype == "dap-view"
+          or filetype == "dap-view-hover"
+          or filetype == "dap-value-hover"
+          or filetype == "dap-repl"
       end
 
       local function focus_debugger()
@@ -165,6 +170,7 @@ return {
       end
       local function debug_stopped()
         clear_debug_focus()
+        require("config.debug_hover").close()
         require("config.trouble").debug_stopped()
       end
       dap.listeners.before.event_terminated.dap_view_focus = debug_stopped
@@ -244,6 +250,17 @@ return {
         local workspace = vim.fs.dirname(vim.fs.dirname(launch_path))
         for _, config in ipairs(configs) do
           resolve_workspace_variables(config, workspace)
+          if config.type == "go"
+            and config.request == "launch"
+            and (config.program == "${file}" or config.program == "${fileDirname}") then
+            config.program = go_main_directory
+            config.cwd = go_module_directory
+          end
+          if config.type == "go" and config.mode == "auto" then
+            -- vscode-go resolves "auto" before invoking Delve. nvim-dap talks
+            -- to Delve directly, where "auto" is not a supported mode.
+            config.mode = nil
+          end
         end
         return configs
       end
@@ -344,6 +361,63 @@ return {
         },
       })
 
+      local function go_package_directory()
+        local file = vim.api.nvim_buf_get_name(0)
+        return file ~= "" and vim.fs.dirname(file) or vim.fn.getcwd()
+      end
+
+      go_module_directory = function()
+        local directory = go_package_directory()
+        local go_mod = vim.fs.find("go.mod", { path = directory, upward = true })[1]
+        return go_mod and vim.fs.dirname(go_mod) or directory
+      end
+
+      go_main_directory = function()
+        local package_directory = go_package_directory()
+        local module_directory = go_module_directory()
+        local package = vim.system(
+          { "go", "list", "-f", "{{.Name}}", "." },
+          { cwd = package_directory, text = true }
+        ):wait()
+        if package.code == 0 and vim.trim(package.stdout or "") == "main" then
+          return package_directory
+        end
+
+        local result = vim.system(
+          { "go", "list", "-f", '{{if eq .Name "main"}}{{.Dir}}{{end}}', "./..." },
+          { cwd = module_directory, text = true }
+        ):wait()
+        local main_packages = vim.tbl_filter(function(path)
+          return path ~= ""
+        end, vim.split(result.stdout or "", "\n", { trimempty = true }))
+
+        if result.code == 0 and #main_packages > 0 then
+          local module_name = vim.fs.basename(module_directory)
+          for _, path in ipairs(main_packages) do
+            if vim.fs.basename(path) == module_name then
+              return path
+            end
+          end
+          return main_packages[1]
+        end
+
+        vim.notify("No runnable Go main package found; debugging the current package", vim.log.levels.WARN, {
+          title = "DAP",
+        })
+        return package_directory
+      end
+
+      local dap_go_adapter = dap.adapters.go
+      dap.adapters.go = function(callback, client_config)
+        dap_go_adapter(function(adapter)
+          adapter = vim.deepcopy(adapter)
+          if adapter.executable then
+            adapter.executable.cwd = client_config.cwd or go_module_directory()
+          end
+          callback(adapter)
+        end, client_config)
+      end
+
       -- nvim-dap-go's default "launch" configurations ship without args.
       -- Pull them from the workspace .vscode/launch.json at debug time,
       -- leaving configs that already define args (e.g. the prompt-based
@@ -351,6 +425,12 @@ return {
       for _, config in ipairs(dap.configurations.go or {}) do
         if config.request == "launch" and config.args == nil then
           config.args = go_launch_json_args
+        end
+        if config.name == "Debug" then
+          -- Library files are not launchable. Resolve the module's runnable
+          -- main package while still allowing main.go files to debug locally.
+          config.program = go_main_directory
+          config.cwd = go_module_directory
         end
       end
 

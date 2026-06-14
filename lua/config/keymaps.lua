@@ -212,11 +212,33 @@ local function cycle_open_buffer(direction)
   vim.api.nvim_win_set_buf(target_win, buffers[next_index])
 end
 
+local function stop_debugger()
+  local dap = package.loaded.dap
+  if not dap or not dap.session() then
+    return false
+  end
+
+  dap.terminate()
+  return true
+end
+
+local function escape_normal()
+  if not stop_debugger() then
+    vim.cmd.nohlsearch()
+  end
+end
+
+local function escape_visual()
+  vim.cmd.normal({ args = { vim.keycode("<Esc>") }, bang = true })
+  stop_debugger()
+end
+
 -- Leave insert mode, then write the buffer. Only saves real, modified, writable
 -- file buffers, so [No Name], terminal, prompt, and read-only buffers are left
 -- alone (and unchanged buffers don't trigger BufWritePre formatting on every Esc).
 local function escape_and_save()
   vim.cmd("stopinsert")
+  stop_debugger()
   if vim.bo.buftype == ""
     and vim.bo.modifiable
     and not vim.bo.readonly
@@ -226,7 +248,8 @@ local function escape_and_save()
   end
 end
 
-map("n", "<Esc>", "<cmd>nohlsearch<CR>", "Clear search highlight")
+map("n", "<Esc>", escape_normal, "Stop Debugger or Clear Search Highlight")
+map("x", "<Esc>", escape_visual, "Stop Debugger and Exit Visual Mode")
 map("n", "<CR>", "i", "Enter Insert Mode")
 map("x", "<CR>", '"_c', "Replace Selection")
 for _, key in ipairs({
@@ -282,7 +305,12 @@ map("x", "<D-f>", prompt_search_selection, "Find Selection", { expr = true, repl
 map("x", "/", prompt_search_selection, "Find Selection", { expr = true, replace_keycodes = false })
 map("n", "<D-e>", "*", "Find With Selection")
 map("x", "<D-e>", search_selection, "Find With Selection")
-map("n", "<Tab>", "nzzzv", "Find Next")
+map("n", "<Tab>", function()
+  local loaded, debug_hover = pcall(require, "config.debug_hover")
+  if not loaded or not debug_hover.toggle_focus() then
+    vim.cmd.normal({ args = { "nzzzv" }, bang = true })
+  end
+end, "Debug Tooltip or Find Next")
 map("n", "<S-Tab>", "Nzzzv", "Find Previous")
 vim.cmd([[
   cnoremap <expr> <Tab> getcmdtype() =~# '[/?]' ? "\<C-G>" : "\<Tab>"
@@ -383,10 +411,18 @@ map("x", "[", "S]", "Surround Selection With Brackets", { remap = true })
 -- Cursor movement
 map("n", "<Home>", "0i", "Edit at Beginning of Line")
 map("n", "<End>", "A", "Edit at End of Line")
+map("n", "<Left>", "b", "Cursor Previous Word")
+map("n", "<Right>", "w", "Cursor Next Word")
 map("n", "<D-Left>", "b", "Cursor Word Left")
 map("n", "<D-Right>", "w", "Cursor Word Right")
-map("n", "<D-Up>", "gg", "Cursor Top")
-map("n", "<D-Down>", "G", "Cursor Bottom")
+map("n", "<D-Up>", "V", "Select Current Line Up")
+map("n", "<D-Down>", "V", "Select Current Line Down")
+map("x", "<D-Up>", function()
+  return vim.fn.mode() == "V" and "k" or "Vk"
+end, "Select Line Above", { expr = true })
+map("x", "<D-Down>", function()
+  return vim.fn.mode() == "V" and "j" or "Vj"
+end, "Select Line Below", { expr = true })
 map("i", "<D-Left>", "<C-o>b", "Cursor Word Left")
 map("i", "<D-Right>", "<C-o>w", "Cursor Word Right")
 map("i", "<D-Up>", "<C-o>gg", "Cursor Top")
@@ -394,15 +430,15 @@ map("i", "<D-Down>", "<C-o>G", "Cursor Bottom")
 map("x", "<D-Left>", "b", "Cursor Word Left")
 map("x", "<D-Right>", "w", "Cursor Word Right")
 map("n", "<D-S-Left>", "vb", "Select Word Left")
-map("n", "<D-S-Right>", "vw", "Select Word Right")
+map("n", "<D-S-Right>", "ve", "Select Word Right")
 map("n", "<D-S-Up>", "vgg", "Cursor Top Select")
 map("n", "<D-S-Down>", "vG", "Cursor Bottom Select")
 map("i", "<D-S-Left>", "<Esc>vb", "Select Word Left")
-map("i", "<D-S-Right>", "<Esc>vw", "Select Word Right")
+map("i", "<D-S-Right>", "<Esc>ve", "Select Word Right")
 map("i", "<D-S-Up>", "<Esc>vgg", "Cursor Top Select")
 map("i", "<D-S-Down>", "<Esc>vG", "Cursor Bottom Select")
 map("x", "<D-S-Left>", "b", "Select Word Left")
-map("x", "<D-S-Right>", "w", "Select Word Right")
+map("x", "<D-S-Right>", "e", "Select Word Right")
 local function set_visual_arrow_keymaps(bufnr)
   if vim.bo[bufnr].buftype ~= "" then
     for _, key in ipairs({ "<Left>", "<Right>", "<Up>", "<Down>" }) do

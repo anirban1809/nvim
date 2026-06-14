@@ -18,7 +18,10 @@ local function is_debug_window(win)
     return true
   end
   local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
-  return filetype == "dap-view" or filetype == "dap-view-hover" or filetype == "dap-repl"
+  return filetype == "dap-view"
+    or filetype == "dap-view-hover"
+    or filetype == "dap-value-hover"
+    or filetype == "dap-repl"
 end
 
 local function debugging()

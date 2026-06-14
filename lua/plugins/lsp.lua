@@ -137,6 +137,13 @@ return {
             return
           end
 
+          local dap = package.loaded.dap
+          local session = dap and dap.session()
+          if session then
+            require("config.debug_hover").show(session, vim.fn.expand("<cexpr>"), win, bufnr, cursor)
+            return
+          end
+
           for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
             if client:supports_method("textDocument/hover") then
               vim.lsp.buf.hover()
