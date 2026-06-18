@@ -35,6 +35,7 @@ return {
     },
     config = function()
       local capabilities = require("blink.cmp").get_lsp_capabilities()
+      capabilities.textDocument.completion.completionItem.snippetSupport = false
 
       -- Diagnostics UI
       vim.diagnostic.config({
@@ -237,7 +238,7 @@ return {
             gopls = {
               gofumpt = true,
               completeUnimported = true,
-              usePlaceholders = true,
+              usePlaceholders = false,
               analyses = {
                 unusedparams = true,
                 shadow = true,
@@ -267,11 +268,10 @@ return {
             "--clang-tidy",
             "--header-insertion=iwyu",
             "--completion-style=detailed",
-            "--function-arg-placeholders",
             "--fallback-style=llvm",
           },
           init_options = {
-            usePlaceholders = true,
+            usePlaceholders = false,
             completeUnimported = true,
             clangdFileStatus = true,
           },
@@ -314,7 +314,7 @@ return {
               workspace = { checkThirdParty = false },
               telemetry = { enable = false },
               diagnostics = { globals = { "vim" } },
-              completion = { callSnippet = "Replace" },
+              completion = { callSnippet = "Disable" },
               hint = { enable = true },
             },
           },
@@ -349,7 +349,7 @@ return {
           -- Formatters
           "prettierd", "prettier",
           "stylua",
-          "gofumpt", "goimports",
+          "gofumpt", "goimports", "golines",
           "clang-format",
           -- Linters
           "eslint_d",

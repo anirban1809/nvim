@@ -119,6 +119,7 @@ return {
       vim.g.VM_maps = {
         ["Find Under"] = "<D-d>",
         ["Find Subword Under"] = "<D-d>",
+        ["Find Next"] = "<D-d>",
         ["Select All"] = "<D-S-l>",
         ["Add Cursor Down"] = "<M-D-Down>",
         ["Add Cursor Up"] = "<M-D-Up>",

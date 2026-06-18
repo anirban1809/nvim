@@ -30,10 +30,15 @@ return {
         markdown   = { "prettierd", "prettier", stop_after_first = true },
         html       = { "prettierd", "prettier", stop_after_first = true },
         css        = { "prettierd", "prettier", stop_after_first = true },
-        go         = { "goimports", "gofumpt" },
+        go         = { "goimports", "golines" },
         c          = { "clang-format" },
         cpp        = { "clang-format" },
         rust       = { "rustfmt" },
+      },
+      formatters = {
+        golines = {
+          append_args = { "--max-len=100", "--tab-len=8", "--base-formatter=gofumpt" },
+        },
       },
       format_on_save = function(bufnr)
         if vim.g.disable_autoformat or vim.b[bufnr].disable_autoformat then return end

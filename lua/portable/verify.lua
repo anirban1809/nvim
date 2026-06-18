@@ -10,6 +10,7 @@ M.mason_tools = {
   "eslint_d",
   "gofumpt",
   "goimports",
+  "golines",
   "gopls",
   "js-debug-adapter",
   "lua-language-server",

@@ -222,6 +222,38 @@ local function stop_debugger()
   return true
 end
 
+local function debugger_active()
+  local dap = package.loaded.dap
+  return dap and dap.session() ~= nil
+end
+
+local function insert_tab_or_skip_debugger()
+  if debugger_active() then
+    return ""
+  end
+  return "\t"
+end
+
+local function normal_tab()
+  if debugger_active() then
+    local loaded, debug_hover = pcall(require, "config.debug_hover")
+    if loaded then
+      debug_hover.toggle_focus()
+    end
+    return
+  end
+
+  vim.cmd.normal({ args = { vim.keycode("i<Tab><Esc>") }, bang = true })
+end
+
+local function visual_tab()
+  if debugger_active() then
+    return
+  end
+
+  vim.cmd.normal({ args = { vim.keycode([["_c<Tab><Esc>]]) }, bang = true })
+end
+
 local function escape_normal()
   if not stop_debugger() then
     vim.cmd.nohlsearch()
@@ -305,17 +337,11 @@ map("x", "<D-f>", prompt_search_selection, "Find Selection", { expr = true, repl
 map("x", "/", prompt_search_selection, "Find Selection", { expr = true, replace_keycodes = false })
 map("n", "<D-e>", "*", "Find With Selection")
 map("x", "<D-e>", search_selection, "Find With Selection")
-map("n", "<Tab>", function()
-  local loaded, debug_hover = pcall(require, "config.debug_hover")
-  if not loaded or not debug_hover.toggle_focus() then
-    vim.cmd.normal({ args = { "nzzzv" }, bang = true })
-  end
-end, "Debug Tooltip or Find Next")
-map("n", "<S-Tab>", "Nzzzv", "Find Previous")
-vim.cmd([[
-  cnoremap <expr> <Tab> getcmdtype() =~# '[/?]' ? "\<C-G>" : "\<Tab>"
-  cnoremap <expr> <S-Tab> getcmdtype() =~# '[/?]' ? "\<C-T>" : "\<S-Tab>"
-]])
+map("n", "<Tab>", normal_tab, "Insert Tab")
+map("i", "<Tab>", insert_tab_or_skip_debugger, "Insert Tab", { expr = true, replace_keycodes = false })
+map("x", "<Tab>", visual_tab, "Replace Selection With Tab")
+map("s", "<Tab>", insert_tab_or_skip_debugger, "Replace Selection With Tab", { expr = true, replace_keycodes = false })
+map("c", "<Tab>", insert_tab_or_skip_debugger, "Insert Tab", { expr = true, replace_keycodes = false })
 map("n", "<D-g>", "nzzzv", "Find Next")
 map("n", "<D-S-g>", "Nzzzv", "Find Previous")
 map("n", "<D-S-f>", "<cmd>Telescope live_grep<CR>", "Search: Find in Files")

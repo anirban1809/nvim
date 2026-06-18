@@ -26,9 +26,10 @@ vim.api.nvim_create_autocmd("FileType", {
   group = augroup("indent_2sp"),
   pattern = { "lua", "typescript", "typescriptreact", "javascript", "javascriptreact", "json", "yaml", "html", "css" },
   callback = function()
+    vim.bo.expandtab = false
     vim.bo.shiftwidth = 2
     vim.bo.tabstop = 2
-    vim.bo.softtabstop = 2
+    vim.bo.softtabstop = 0
   end,
 })
 
@@ -39,6 +40,7 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.bo.expandtab = false
     vim.bo.shiftwidth = 4
     vim.bo.tabstop = 4
+    vim.bo.softtabstop = 0
   end,
 })
 
