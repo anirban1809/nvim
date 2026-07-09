@@ -377,6 +377,9 @@ local function next_file_error()
 end
 map("n", "0", next_file_error, "Problems: Next Error in Current File")
 map("n", "<k0>", next_file_error, "Problems: Next Error in Current File")
+map("n", "<k2>", function()
+  require("config.go_warnings").toggle()
+end, "Go: Toggle Warning Diagnostics")
 map({ "n", "t" }, "<D-j>", "<cmd>ToggleTerm direction=horizontal<CR>", "View: Toggle Panel")
 map({ "n", "t" }, "<C-S-`>", "<cmd>ToggleTerm direction=horizontal<CR>", "Terminal: New Terminal")
 

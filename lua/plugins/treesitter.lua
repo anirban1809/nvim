@@ -4,7 +4,7 @@ local parsers = {
   "html", "javascript", "json", "lua", "luadoc",
   "make", "markdown", "markdown_inline", "python",
   "regex", "rust", "toml", "tsx", "typescript",
-  "vim", "vimdoc", "yaml",
+  "vim", "vimdoc", "yaml", "zig",
 }
 
 local selection_stack = {}

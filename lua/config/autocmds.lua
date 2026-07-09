@@ -23,13 +23,13 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 
 -- Filetype-specific indents
 vim.api.nvim_create_autocmd("FileType", {
-  group = augroup("indent_2sp"),
+  group = augroup("indent_4sp"),
   pattern = { "lua", "typescript", "typescriptreact", "javascript", "javascriptreact", "json", "yaml", "html", "css" },
   callback = function()
-    vim.bo.expandtab = false
-    vim.bo.shiftwidth = 2
-    vim.bo.tabstop = 2
-    vim.bo.softtabstop = 0
+    vim.bo.expandtab = true
+    vim.bo.shiftwidth = 4
+    vim.bo.tabstop = 4
+    vim.bo.softtabstop = 4
   end,
 })
 
@@ -37,10 +37,10 @@ vim.api.nvim_create_autocmd("FileType", {
   group = augroup("indent_go"),
   pattern = "go",
   callback = function()
-    vim.bo.expandtab = false
+    vim.bo.expandtab = true
     vim.bo.shiftwidth = 4
     vim.bo.tabstop = 4
-    vim.bo.softtabstop = 0
+    vim.bo.softtabstop = 4
   end,
 })
 

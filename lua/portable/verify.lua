@@ -1,6 +1,6 @@
 local M = {}
 
-M.host_commands = { "nvim", "git", "make", "cc", "rg", "fd", "go", "node", "npm", "tree-sitter" }
+M.host_commands = { "nvim", "git", "make", "cc", "rg", "fd", "go", "node", "npm", "tree-sitter", "zig" }
 
 M.mason_tools = {
   "clang-format",
@@ -19,6 +19,7 @@ M.mason_tools = {
   "rust-analyzer",
   "stylua",
   "typescript-language-server",
+  "zls",
 }
 
 M.treesitter_parsers = {
@@ -27,7 +28,7 @@ M.treesitter_parsers = {
   "html", "javascript", "json", "lua", "luadoc",
   "make", "markdown", "markdown_inline", "python",
   "regex", "rust", "toml", "tsx", "typescript",
-  "vim", "vimdoc", "yaml",
+  "vim", "vimdoc", "yaml", "zig",
 }
 
 function M.errors()

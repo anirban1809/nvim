@@ -93,7 +93,7 @@ if [ -d "$HOME/.cargo/bin" ]; then
 fi
 
 current_step="host dependency verification"
-for command_name in nvim git make cc rg fd go node npm tree-sitter; do
+for command_name in nvim git make cc rg fd go node npm tree-sitter zig; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     printf 'Required command is unavailable after installation: %s\n' "$command_name" >&2
     exit 1

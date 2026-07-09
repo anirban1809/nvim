@@ -37,7 +37,7 @@ function M.check()
   check_executables({ "git", "make", "cc", "rg", "fd", "tree-sitter" }, true)
 
   vim.health.start("Language runtimes")
-  check_executables({ "go", "node", "npm", "cargo", "rustc" }, false)
+  check_executables({ "go", "node", "npm", "cargo", "rustc", "zig" }, false)
 
   vim.health.start("Mason tools")
   local mason_bin = vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "bin")

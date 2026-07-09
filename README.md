@@ -3,7 +3,7 @@
 This repository contains the complete Neovim configuration, including all
 keymaps, plugins, LSP settings, formatting, persistent breakpoints, restored
 buffers, ThemeHub, Trouble, Blink completion, and DAP support for Go, C/C++,
-Rust, and JavaScript/TypeScript.
+Rust, Zig, and JavaScript/TypeScript.
 
 Plugin revisions are pinned in `lazy-lock.json`. Host dependencies are declared
 in `Brewfile`; LSP servers, formatters, debug adapters, and Tree-sitter parsers
@@ -23,7 +23,7 @@ The script:
 
 1. Checks for the Xcode Command Line Tools.
 2. Installs Homebrew when necessary.
-3. Installs Neovim, Git, search/build tools, Go, Node.js, Rustup, and a Nerd Font.
+3. Installs Neovim, Git, search/build tools, Go, Node.js, Zig, Rustup, and a Nerd Font.
 4. Reuses an existing Rust toolchain, or installs Rustup when Rust is absent.
 5. Links the checkout to `${XDG_CONFIG_HOME:-~/.config}/nvim`.
 6. Installs the pinned plugins, Mason tools, and Tree-sitter parsers.

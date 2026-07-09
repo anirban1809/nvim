@@ -219,5 +219,130 @@ return {
       apply_after_install = true,
       persistent = true,
     },
+    config = function(_, opts)
+      local darker_nord = {
+        bg = "#1b1f26",
+        fg = "#aeb9cc",
+        active = "#252b35",
+        border = "#5f7f9f",
+        highlight = "#363f4e",
+        highlight_dark = "#394252",
+        selection = "#445064",
+        comment = "#4d5668",
+      }
+
+      local function apply_darker_nord_highlights()
+        vim.api.nvim_set_hl(0, "Normal", { fg = darker_nord.fg, bg = darker_nord.bg })
+        vim.api.nvim_set_hl(0, "NormalNC", { fg = darker_nord.fg, bg = darker_nord.bg })
+        vim.api.nvim_set_hl(0, "SignColumn", { bg = darker_nord.bg })
+        vim.api.nvim_set_hl(0, "EndOfBuffer", { fg = darker_nord.bg })
+        vim.api.nvim_set_hl(0, "NormalFloat", { fg = darker_nord.fg, bg = darker_nord.bg })
+        vim.api.nvim_set_hl(0, "FloatBorder", { fg = darker_nord.border, bg = darker_nord.bg })
+        vim.api.nvim_set_hl(0, "FloatTitle", { fg = darker_nord.fg, bg = darker_nord.active })
+        vim.api.nvim_set_hl(0, "CursorLine", { bg = darker_nord.active })
+        vim.api.nvim_set_hl(0, "Pmenu", { bg = darker_nord.active })
+        vim.api.nvim_set_hl(0, "PmenuSel", { bg = darker_nord.selection })
+        vim.api.nvim_set_hl(0, "Visual", { bg = darker_nord.highlight })
+        vim.api.nvim_set_hl(0, "Comment", { fg = darker_nord.comment })
+        vim.api.nvim_set_hl(0, "@comment", { fg = darker_nord.comment })
+
+        for _, group in ipairs({
+          "Identifier",
+          "Include",
+          "@variable",
+          "@variable.member",
+          "@field",
+          "@module",
+          "@namespace",
+          "@property",
+          "@lsp.type.namespace",
+          "@lsp.type.package",
+          "@lsp.type.variable",
+          "@lsp.type.member",
+          "@lsp.type.property",
+          "@lsp.typemod.variable.declaration",
+          "@lsp.typemod.variable.defaultLibrary",
+          "@lsp.typemod.property.declaration",
+          "@lsp.typemod.property.defaultLibrary",
+        }) do
+          vim.api.nvim_set_hl(0, group, { fg = darker_nord.fg })
+        end
+
+        for _, group in ipairs({
+          "TelescopeNormal",
+          "TelescopePreviewNormal",
+          "TelescopeResultsNormal",
+        }) do
+          vim.api.nvim_set_hl(0, group, { fg = darker_nord.fg, bg = darker_nord.bg })
+        end
+
+        for _, group in ipairs({
+          "TelescopeBorder",
+          "TelescopePreviewBorder",
+          "TelescopeResultsBorder",
+        }) do
+          vim.api.nvim_set_hl(0, group, { fg = darker_nord.border, bg = darker_nord.bg })
+        end
+
+        vim.api.nvim_set_hl(0, "TelescopePromptNormal", { fg = darker_nord.fg, bg = darker_nord.active })
+        vim.api.nvim_set_hl(0, "TelescopePromptBorder", { fg = darker_nord.border, bg = darker_nord.active })
+        vim.api.nvim_set_hl(0, "TelescopeSelection", { bg = darker_nord.selection })
+        vim.api.nvim_set_hl(0, "TelescopeMatching", { fg = darker_nord.fg })
+
+        for _, group in ipairs({
+          "TelescopeTitle",
+          "TelescopePromptTitle",
+          "TelescopePreviewTitle",
+          "TelescopeResultsTitle",
+        }) do
+          vim.api.nvim_set_hl(0, group, { fg = darker_nord.fg, bg = darker_nord.active })
+        end
+      end
+
+      local function configure_rose_pine()
+        local ok, rose_pine = pcall(require, "rose-pine")
+        if ok then
+          rose_pine.setup({
+            styles = {
+              italic = false,
+            },
+          })
+        end
+      end
+
+      local registry = require("theme-hub.registry")
+      local has_pasteldark = false
+      for _, theme in ipairs(registry) do
+        if theme.name == "pasteldark" then
+          has_pasteldark = true
+          break
+        end
+      end
+
+      if not has_pasteldark then
+        table.insert(registry, {
+          name = "pasteldark",
+          repo = "ankushbhagats/pastel.nvim",
+          description = "Elegant pastel colorscheme for Neovim with built-in plugin integrations.",
+          tags = { "dark", "pastel", "soft" },
+          install_path = "pastel.nvim",
+        })
+      end
+
+      vim.api.nvim_create_autocmd("ColorScheme", {
+        pattern = { "nord", "onenord" },
+        callback = apply_darker_nord_highlights,
+      })
+
+      vim.api.nvim_create_autocmd("ColorSchemePre", {
+        pattern = "rose-pine*",
+        callback = configure_rose_pine,
+      })
+
+      require("theme-hub").setup(opts)
+      if vim.tbl_contains({ "nord", "onenord" }, vim.g.colors_name) then
+        apply_darker_nord_highlights()
+      end
+    end,
   },
 }

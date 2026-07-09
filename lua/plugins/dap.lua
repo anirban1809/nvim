@@ -1,7 +1,7 @@
 return {
   {
     "mfussenegger/nvim-dap",
-    ft = { "go", "c", "cpp", "rust", "typescript", "javascript", "typescriptreact", "javascriptreact" },
+    ft = { "go", "c", "cpp", "rust", "zig", "typescript", "javascript", "typescriptreact", "javascriptreact" },
     dependencies = {
       {
         "igorlfs/nvim-dap-view",
@@ -65,6 +65,7 @@ return {
       local last_editor_win
       local go_module_directory
       local go_main_directory
+      local zig_project_directory
 
       local function is_debug_window(win)
         if not win or not vim.api.nvim_win_is_valid(win) then
@@ -176,6 +177,23 @@ return {
       dap.listeners.before.event_terminated.dap_view_focus = debug_stopped
       dap.listeners.before.event_exited.dap_view_focus = debug_stopped
       dap.listeners.before.disconnect.dap_view_focus = debug_stopped
+      dap.listeners.after.event_stopped.node_inspect_break = function(session, body)
+        if not session
+          or not session.config
+          or session.config.type ~= "pwa-node"
+          or type(session.config.name) ~= "string"
+          or not session.config.name:match("^Remote Process")
+          or session.__auto_continued_inspect_break
+          or not body
+          or body.reason ~= "pause"
+          or body.description ~= "Paused on debugger statement"
+          or not body.threadId then
+          return
+        end
+
+        session.__auto_continued_inspect_break = true
+        session:request("continue", { threadId = body.threadId }, function() end)
+      end
 
       vim.api.nvim_create_autocmd("FileType", {
         group = vim.api.nvim_create_augroup("dap_view_hover_wrap", { clear = true }),
@@ -229,6 +247,80 @@ return {
         return value
       end
 
+      local function append_unique(list, item)
+        list = list or {}
+        if not vim.tbl_contains(list, item) then
+          table.insert(list, item)
+        end
+        return list
+      end
+
+      local function get_free_port()
+        local server = assert(vim.uv.new_tcp())
+        assert(server:bind("127.0.0.1", 0))
+        local port = assert(server:getsockname()).port
+        server:close()
+        return port
+      end
+
+      local function force_inspect_break(config)
+        local port = get_free_port()
+        local runtime_args = vim.tbl_filter(function(arg)
+          return type(arg) ~= "string" or not arg:match("^%-%-inspect%-brk")
+        end, config.runtimeArgs or {})
+
+        table.insert(runtime_args, 1, ("--inspect-brk=127.0.0.1:%d"):format(port))
+        config.runtimeArgs = runtime_args
+        config.attachSimplePort = port
+      end
+
+      local function add_typescript_loader(config)
+        if type(config.program) ~= "string" or not config.program:match("%.tsx?$") then
+          return
+        end
+
+        local loader = vim.fs.joinpath(vim.fn.stdpath("config"), "scripts", "node-ts-esm-loader.mjs")
+        local register_loader = ('data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register(%q, pathToFileURL("./"));'):format(loader)
+        config.runtimeArgs = append_unique(config.runtimeArgs, "--import")
+        config.runtimeArgs = append_unique(config.runtimeArgs, register_loader)
+      end
+
+      local function normalize_node_debug_config(config)
+        if config.type == "node" then
+          config.type = "pwa-node"
+        elseif config.type == "chrome" then
+          config.type = "pwa-chrome"
+        elseif config.type == "msedge" then
+          config.type = "pwa-msedge"
+        end
+
+        if not vim.tbl_contains({ "pwa-node", "node-terminal" }, config.type) then
+          return
+        end
+
+        config.sourceMaps = config.sourceMaps ~= false
+        config.skipFiles = append_unique(config.skipFiles, "<node_internals>/**")
+        config.skipFiles = append_unique(config.skipFiles, "node_modules/**")
+
+        if config.request == "launch" then
+          config.runtimeExecutable = config.runtimeExecutable or "node"
+          config.runtimeArgs = append_unique(config.runtimeArgs, "--enable-source-maps")
+          add_typescript_loader(config)
+          if config.stopOnEntry == nil then
+            config.stopOnEntry = true
+          end
+          if config.type == "pwa-node" then
+            force_inspect_break(config)
+          end
+        end
+      end
+
+      local function normalize_codelldb_config(config)
+        if config.type == "lldb" then
+          config.type = "codelldb"
+        end
+      end
+
       -- nvim-dap normally checks only {cwd}/.vscode/launch.json. Resolve it
       -- from the current buffer so launching Neovim outside the project still
       -- applies VS Code settings such as args, cwd, and env.
@@ -250,6 +342,8 @@ return {
         local workspace = vim.fs.dirname(vim.fs.dirname(launch_path))
         for _, config in ipairs(configs) do
           resolve_workspace_variables(config, workspace)
+          normalize_node_debug_config(config)
+          normalize_codelldb_config(config)
           if config.type == "go"
             and config.request == "launch"
             and (config.program == "${file}" or config.program == "${fileDirname}") then
@@ -288,7 +382,7 @@ return {
       -- ===== Adapters =====
       local mason_path = vim.fn.stdpath("data") .. "/mason"
 
-      -- C / C++ / Rust via codelldb
+      -- C / C++ / Rust / Zig via codelldb
       dap.adapters.codelldb = {
         type = "server",
         port = "${port}",
@@ -325,6 +419,138 @@ return {
           },
         }
       end
+
+      local function current_file_directory()
+        local file = vim.api.nvim_buf_get_name(0)
+        return file ~= "" and vim.fs.dirname(file) or vim.fn.getcwd()
+      end
+
+      zig_project_directory = function()
+        local directory = current_file_directory()
+        local build_zig = vim.fs.find("build.zig", { path = directory, upward = true })[1]
+        return build_zig and vim.fs.dirname(build_zig) or directory
+      end
+
+      local function executable_files(directory)
+        local files = {}
+        local scan = vim.uv.fs_scandir(directory)
+        if not scan then
+          return files
+        end
+
+        while true do
+          local name, kind = vim.uv.fs_scandir_next(scan)
+          if not name then
+            break
+          end
+          local path = vim.fs.joinpath(directory, name)
+          if kind == "file" and vim.fn.executable(path) == 1 then
+            files[#files + 1] = path
+          end
+        end
+        table.sort(files)
+        return files
+      end
+
+      local function run_zig_build(args, cwd)
+        local result = vim.system(args, { cwd = cwd, text = true }):wait()
+        if result.code == 0 then
+          return true
+        end
+
+        local output = vim.trim(table.concat({ result.stderr or "", result.stdout or "" }, "\n"))
+        vim.notify(output ~= "" and output or "zig build failed", vim.log.levels.ERROR, {
+          title = "DAP",
+        })
+        return false
+      end
+
+      local function zig_project_executable()
+        local root = zig_project_directory()
+        if vim.uv.fs_stat(vim.fs.joinpath(root, "build.zig")) then
+          if not run_zig_build({ "zig", "build", "-Doptimize=Debug" }, root) then
+            return nil
+          end
+        end
+
+        local bin_directory = vim.fs.joinpath(root, "zig-out", "bin")
+        local executables = executable_files(bin_directory)
+        if #executables == 1 then
+          return executables[1]
+        end
+
+        return vim.fn.input("Executable: ", bin_directory .. "/", "file")
+      end
+
+      local function zig_file_executable()
+        local file = vim.api.nvim_buf_get_name(0)
+        if file == "" then
+          vim.notify("Save the Zig file before debugging", vim.log.levels.ERROR, { title = "DAP" })
+          return nil
+        end
+
+        local output_directory = vim.fs.joinpath(vim.fn.stdpath("state"), "zig-debug", vim.fn.sha256(file))
+        vim.fn.mkdir(output_directory, "p")
+        local output = vim.fs.joinpath(output_directory, vim.fn.fnamemodify(file, ":t:r"))
+
+        if not run_zig_build({
+          "zig",
+          "build-exe",
+          file,
+          "-O",
+          "Debug",
+          "-femit-bin=" .. output,
+        }, vim.fs.dirname(file)) then
+          return nil
+        end
+        return output
+      end
+
+      dap.configurations.zig = {
+        {
+          name = "Launch project (zig build)",
+          type = "codelldb",
+          request = "launch",
+          program = zig_project_executable,
+          cwd = zig_project_directory,
+          stopOnEntry = false,
+          args = function()
+            local raw = vim.fn.input("Args (space-separated): ")
+            return vim.split(raw, " ", { trimempty = true })
+          end,
+        },
+        {
+          name = "Launch file (zig build-exe)",
+          type = "codelldb",
+          request = "launch",
+          program = zig_file_executable,
+          cwd = current_file_directory,
+          stopOnEntry = false,
+          args = function()
+            local raw = vim.fn.input("Args (space-separated): ")
+            return vim.split(raw, " ", { trimempty = true })
+          end,
+        },
+        {
+          name = "Launch executable (codelldb)",
+          type = "codelldb",
+          request = "launch",
+          program = pick_executable,
+          cwd = "${workspaceFolder}",
+          stopOnEntry = false,
+          args = function()
+            local raw = vim.fn.input("Args (space-separated): ")
+            return vim.split(raw, " ", { trimempty = true })
+          end,
+        },
+        {
+          name = "Attach to process (codelldb)",
+          type = "codelldb",
+          request = "attach",
+          pid = require("dap.utils").pick_process,
+          cwd = "${workspaceFolder}",
+        },
+      }
 
       -- Read the CLI args for a Go "launch" config from the workspace
       -- root's .vscode/launch.json, resolving ${workspaceFolder} etc. so
@@ -434,7 +660,7 @@ return {
         end
       end
 
-      local function set_go_debug_keymaps(bufnr)
+      local function set_language_debug_keymaps(bufnr)
         local opts = { buffer = bufnr, silent = true }
         vim.keymap.set("n", "1", dap.step_over, vim.tbl_extend("force", opts, { desc = "Debug: Step Over" }))
         vim.keymap.set("n", "2", dap.step_into, vim.tbl_extend("force", opts, { desc = "Debug: Step Into" }))
@@ -445,64 +671,110 @@ return {
       end
 
       vim.api.nvim_create_autocmd("FileType", {
-        group = vim.api.nvim_create_augroup("go_debug_keymaps", { clear = true }),
-        pattern = "go",
+        group = vim.api.nvim_create_augroup("language_debug_keymaps", { clear = true }),
+        pattern = { "go", "zig", "typescript", "javascript", "typescriptreact", "javascriptreact" },
         callback = function(event)
-          set_go_debug_keymaps(event.buf)
+          set_language_debug_keymaps(event.buf)
         end,
       })
 
-      if vim.bo.filetype == "go" then
-        set_go_debug_keymaps(0)
+      if vim.tbl_contains({ "go", "zig", "typescript", "javascript", "typescriptreact", "javascriptreact" }, vim.bo.filetype) then
+        set_language_debug_keymaps(0)
       end
 
       -- TypeScript / JavaScript via vscode-js-debug
       require("dap-vscode-js").setup({
-        debugger_path = mason_path .. "/packages/js-debug-adapter",
-        debugger_cmd = { mason_path .. "/bin/js-debug-adapter" },
+        debugger_path = mason_path .. "/packages/js-debug-adapter/js-debug",
         adapters = { "pwa-node", "pwa-chrome", "pwa-msedge", "node-terminal", "pwa-extensionHost" },
       })
 
-      for _, ft in ipairs({ "typescript", "javascript", "typescriptreact", "javascriptreact" }) do
-        dap.configurations[ft] = {
-          {
-            type = "pwa-node",
-            request = "launch",
-            name = "Launch file",
-            program = "${file}",
-            cwd = "${workspaceFolder}",
-            sourceMaps = true,
-            runtimeExecutable = "node",
-          },
-          {
-            type = "pwa-node",
-            request = "launch",
-            name = "Launch via ts-node",
-            runtimeExecutable = "node",
-            runtimeArgs = { "--loader", "ts-node/esm" },
-            program = "${file}",
-            cwd = "${workspaceFolder}",
-            sourceMaps = true,
-            protocol = "inspector",
-            skipFiles = { "<node_internals>/**", "node_modules/**" },
-          },
-          {
-            type = "pwa-node",
-            request = "attach",
-            name = "Attach to process",
-            processId = require("dap.utils").pick_process,
-            cwd = "${workspaceFolder}",
-            sourceMaps = true,
-          },
-          {
-            type = "pwa-chrome",
-            request = "launch",
-            name = "Launch Chrome (localhost:3000)",
-            url = "http://localhost:3000",
-            webRoot = "${workspaceFolder}",
-            sourceMaps = true,
+      local js_debug_server = mason_path .. "/packages/js-debug-adapter/js-debug/src/dapDebugServer.js"
+      local function js_debug_adapter()
+        return {
+          type = "server",
+          host = "127.0.0.1",
+          port = "${port}",
+          executable = {
+            command = "node",
+            args = { js_debug_server, "${port}", "127.0.0.1" },
           },
         }
+      end
+
+      for _, adapter in ipairs({ "pwa-node", "pwa-chrome", "pwa-msedge", "node-terminal", "pwa-extensionHost" }) do
+        dap.adapters[adapter] = js_debug_adapter()
+      end
+
+      local node_attach = {
+        type = "pwa-node",
+        request = "attach",
+        name = "Attach to process",
+        processId = require("dap.utils").pick_process,
+        cwd = "${workspaceFolder}",
+        sourceMaps = true,
+        skipFiles = { "<node_internals>/**", "node_modules/**" },
+      }
+
+      local chrome_launch = {
+        type = "pwa-chrome",
+        request = "launch",
+        name = "Launch Chrome (localhost:3000)",
+        url = "http://localhost:3000",
+        webRoot = "${workspaceFolder}",
+        sourceMaps = true,
+      }
+
+      local typescript_configurations = {
+        {
+          type = "pwa-node",
+          request = "launch",
+          name = "Launch file",
+          program = "${file}",
+          cwd = "${workspaceFolder}",
+          runtimeExecutable = "node",
+          runtimeArgs = { "--enable-source-maps" },
+          sourceMaps = true,
+          stopOnEntry = true,
+          skipFiles = { "<node_internals>/**", "node_modules/**" },
+        },
+        {
+          type = "pwa-node",
+          request = "launch",
+          name = "Launch via ts-node",
+          program = "${file}",
+          cwd = "${workspaceFolder}",
+          runtimeExecutable = "node",
+          runtimeArgs = { "--enable-source-maps", "--loader", "ts-node/esm" },
+          sourceMaps = true,
+          stopOnEntry = true,
+          protocol = "inspector",
+          skipFiles = { "<node_internals>/**", "node_modules/**" },
+        },
+        node_attach,
+        chrome_launch,
+      }
+
+      local javascript_configurations = {
+        {
+          type = "pwa-node",
+          request = "launch",
+          name = "Launch file",
+          program = "${file}",
+          cwd = "${workspaceFolder}",
+          runtimeExecutable = "node",
+          runtimeArgs = { "--enable-source-maps" },
+          sourceMaps = true,
+          skipFiles = { "<node_internals>/**", "node_modules/**" },
+        },
+        node_attach,
+        chrome_launch,
+      }
+
+      for _, ft in ipairs({ "typescript", "typescriptreact" }) do
+        dap.configurations[ft] = vim.deepcopy(typescript_configurations)
+      end
+      for _, ft in ipairs({ "javascript", "javascriptreact" }) do
+        dap.configurations[ft] = vim.deepcopy(javascript_configurations)
       end
     end,
   },

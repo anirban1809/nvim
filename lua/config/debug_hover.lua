@@ -2,6 +2,7 @@ local M = {}
 
 local state = {
   generation = 0,
+  view = "value",
 }
 
 local function valid_win(win)
@@ -21,6 +22,9 @@ local function reset()
   state.session = nil
   state.root = nil
   state.line_nodes = nil
+  state.stack_lines = nil
+  state.stack_frames = nil
+  state.view = "value"
 end
 
 local function close_window()
@@ -57,14 +61,11 @@ local function append_visible(node, depth, lines, line_nodes)
   end
 end
 
-local function render()
-  if not valid_win(state.win) or not valid_buf(state.buf) or not state.root then
+local function render_lines(lines, line_nodes)
+  if not valid_win(state.win) or not valid_buf(state.buf) then
     return
   end
 
-  local lines = {}
-  local line_nodes = {}
-  append_visible(state.root, 0, lines, line_nodes)
   state.line_nodes = line_nodes
 
   vim.bo[state.buf].modifiable = true
@@ -84,8 +85,31 @@ local function render()
   vim.api.nvim_win_set_cursor(state.win, { math.max(row, 1), 0 })
 end
 
+local function render_value()
+  if not state.root then
+    return
+  end
+
+  local lines = {}
+  local line_nodes = {}
+  append_visible(state.root, 0, lines, line_nodes)
+  render_lines(lines, line_nodes)
+end
+
+local function render_stack()
+  render_lines(state.stack_lines or { "Loading call stack..." }, nil)
+end
+
+local function render()
+  if state.view == "stack" then
+    render_stack()
+  else
+    render_value()
+  end
+end
+
 local function selected_node()
-  if not valid_win(state.win) or not state.line_nodes then
+  if state.view ~= "value" or not valid_win(state.win) or not state.line_nodes then
     return
   end
   return state.line_nodes[vim.api.nvim_win_get_cursor(state.win)[1]]
@@ -173,6 +197,101 @@ function M.toggle_focus()
   return true
 end
 
+local function format_stack_frame(frame)
+  local current_frame = state.session and state.session.current_frame
+  local marker = current_frame and frame.id == current_frame.id and "> " or "  "
+  local name = frame.name or "<unknown>"
+  local source = frame.source or {}
+  local path = source.path or source.name or ""
+  local line = frame.line and tostring(frame.line) or "?"
+
+  if path == "" then
+    return marker .. name .. ":" .. line
+  end
+
+  return marker .. name .. " (" .. vim.fn.fnamemodify(path, ":.") .. ":" .. line .. ")"
+end
+
+local function stack_lines(thread, frames)
+  local lines = {}
+  local thread_name = thread and thread.name or "Thread " .. tostring(thread and thread.id or "")
+  lines[#lines + 1] = "Call Stack - " .. thread_name
+
+  for _, frame in ipairs(frames or {}) do
+    lines[#lines + 1] = format_stack_frame(frame)
+  end
+
+  if #lines == 1 then
+    lines[#lines + 1] = "No stack frames"
+  end
+
+  return lines
+end
+
+local function show_stack_frames(thread, frames)
+  state.stack_frames = frames or {}
+  state.stack_lines = stack_lines(thread, state.stack_frames)
+  render()
+end
+
+function M.toggle_call_stack()
+  local dap = package.loaded.dap
+  local session = dap and dap.session()
+  if not session or not valid_win(state.win) or not valid_buf(state.buf) then
+    return false
+  end
+
+  if state.view == "stack" then
+    state.view = "value"
+    render()
+    return true
+  end
+
+  state.view = "stack"
+  state.stack_frames = nil
+  state.stack_lines = { "Loading call stack..." }
+  render()
+
+  if not session.stopped_thread_id then
+    state.stack_lines = { "No stopped thread" }
+    render()
+    return true
+  end
+
+  local thread = session.threads and session.threads[session.stopped_thread_id] or {
+    id = session.stopped_thread_id,
+    name = "Thread " .. tostring(session.stopped_thread_id),
+  }
+  if thread.frames and #thread.frames > 0 then
+    show_stack_frames(thread, thread.frames)
+    return true
+  end
+
+  local generation = state.generation
+  session:request("stackTrace", { threadId = session.stopped_thread_id }, function(err, response)
+    if generation ~= state.generation or state.view ~= "stack" or session ~= state.session then
+      return
+    end
+
+    vim.schedule(function()
+      if generation ~= state.generation or state.view ~= "stack" or session ~= state.session then
+        return
+      end
+
+      if err then
+        state.stack_lines = { "Error fetching call stack: " .. tostring(err.message or err) }
+        render()
+        return
+      end
+
+      thread.frames = response and response.stackFrames or {}
+      show_stack_frames(thread, thread.frames)
+    end)
+  end)
+
+  return true
+end
+
 local function set_keymaps(bufnr)
   local opts = { buffer = bufnr, silent = true, nowait = true }
   vim.keymap.set("n", "<Up>", "k", vim.tbl_extend("force", opts, { desc = "Debug Hover: Previous Value" }))
@@ -180,6 +299,11 @@ local function set_keymaps(bufnr)
   vim.keymap.set("n", "<CR>", toggle_selected, vim.tbl_extend("force", opts, {
     desc = "Debug Hover: Expand or Collapse",
   }))
+  for _, key in ipairs({ "<S-Tab>", "<BackTab>" }) do
+    vim.keymap.set("n", key, M.toggle_call_stack, vim.tbl_extend("force", opts, {
+      desc = "Debug Hover: Show Call Stack",
+    }))
+  end
   vim.keymap.set("n", "<Esc>", M.toggle_focus, vim.tbl_extend("force", opts, { desc = "Debug Hover: Focus Editor" }))
 end
 

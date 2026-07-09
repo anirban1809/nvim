@@ -21,10 +21,10 @@ opt.splitbelow = true
 opt.mouse = "a"
 opt.clipboard = "unnamedplus"
 
-opt.expandtab = false
+opt.expandtab = true
 opt.shiftwidth = 4
 opt.tabstop = 4
-opt.softtabstop = 0
+opt.softtabstop = 4
 opt.smartindent = true
 
 opt.ignorecase = true

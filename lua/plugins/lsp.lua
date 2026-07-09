@@ -68,6 +68,7 @@ return {
             source = true,
             header = "",
             prefix = "",
+            severity = require("config.go_warnings").visible_severities(event.buf),
           })
         end,
       })
@@ -97,9 +98,10 @@ return {
       end
 
       local function diagnostic_at_cursor(bufnr, row, col)
+        local go_warnings = require("config.go_warnings")
         for _, diagnostic in ipairs(vim.diagnostic.get(bufnr, { lnum = row })) do
           local end_col = diagnostic.end_col or diagnostic.col
-          if diagnostic.col <= col and col <= end_col then
+          if diagnostic.col <= col and col <= end_col and go_warnings.is_visible(diagnostic, bufnr) then
             return true
           end
         end
@@ -277,6 +279,9 @@ return {
           },
         },
 
+        -- Zig
+        zls = {},
+
         -- Rust (basic; rustaceanvim covers richer use)
         rust_analyzer = {
           settings = {
@@ -346,6 +351,7 @@ return {
           "lua-language-server",
           "rust-analyzer",
           "typescript-language-server",
+          "zls",
           -- Formatters
           "prettierd", "prettier",
           "stylua",

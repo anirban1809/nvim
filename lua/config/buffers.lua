@@ -2,6 +2,19 @@ local M = {}
 
 local storage_path = vim.fs.joinpath(vim.fn.stdpath("state"), "open-buffers.json")
 
+local function normalize_path(path)
+  return vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+end
+
+local function working_directory()
+  return normalize_path(vim.fn.getcwd())
+end
+
+local function is_path_in_directory(path, directory)
+  local relative = vim.fs.relpath(directory, path)
+  return relative and relative ~= ".." and not relative:match("^%.%.[/\\]")
+end
+
 function M.listed_file_buffers()
   local buffers = {}
   for _, info in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
@@ -56,7 +69,7 @@ local function buffer_path(bufnr)
   if name == "" then
     return nil
   end
-  local path = vim.fs.normalize(vim.fn.fnamemodify(name, ":p"))
+  local path = normalize_path(name)
   local stat = vim.uv.fs_stat(path)
   return stat and stat.type == "file" and path or nil
 end
@@ -68,7 +81,7 @@ local function read_storage()
   end
 
   local decoded_ok, data = pcall(vim.json.decode, table.concat(lines, "\n"))
-  if not decoded_ok or type(data) ~= "table" or type(data.buffers) ~= "table" then
+  if not decoded_ok or type(data) ~= "table" then
     return nil
   end
   return data
@@ -87,11 +100,62 @@ local function write_storage(data)
   end
 end
 
+local function workspace_storage(data)
+  if type(data) ~= "table" then
+    return {}
+  end
+  if type(data.workspaces) == "table" then
+    return data.workspaces
+  end
+  return {}
+end
+
+local function legacy_session_for_directory(data, directory)
+  if type(data) ~= "table" or type(data.buffers) ~= "table" then
+    return nil
+  end
+
+  local buffers = {}
+  local seen = {}
+  for _, path in ipairs(data.buffers) do
+    if type(path) == "string" then
+      local normalized = normalize_path(path)
+      if not seen[normalized] and is_path_in_directory(normalized, directory) then
+        buffers[#buffers + 1] = normalized
+        seen[normalized] = true
+      end
+    end
+  end
+  if #buffers == 0 then
+    return nil
+  end
+
+  local current = type(data.current) == "string" and normalize_path(data.current) or nil
+  if not current or not seen[current] then
+    current = buffers[1]
+  end
+
+  return {
+    current = current,
+    buffers = buffers,
+  }
+end
+
+local function session_for_directory(data, directory)
+  local workspaces = workspace_storage(data)
+  local session = workspaces[directory]
+  if type(session) == "table" and type(session.buffers) == "table" then
+    return session
+  end
+  return legacy_session_for_directory(data, directory)
+end
+
 local function save_buffers()
   if #vim.api.nvim_list_uis() == 0 then
     return
   end
 
+  local directory = working_directory()
   local buffers = {}
   local seen = {}
   local current = buffer_path(vim.api.nvim_get_current_buf())
@@ -100,7 +164,7 @@ local function save_buffers()
 
   for _, info in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
     local path = buffer_path(info.bufnr)
-    if path and not seen[path] then
+    if path and is_path_in_directory(path, directory) and not seen[path] then
       buffers[#buffers + 1] = path
       seen[path] = true
       if info.lastused > most_recent_time then
@@ -110,27 +174,42 @@ local function save_buffers()
     end
   end
 
-  write_storage({
-    version = 1,
+  if current and not seen[current] then
+    current = nil
+  end
+
+  local data = read_storage() or {}
+  local workspaces = workspace_storage(data)
+  workspaces[directory] = {
     current = current or most_recent,
     buffers = buffers,
+    updated_at = os.time(),
+  }
+
+  write_storage({
+    version = 2,
+    workspaces = workspaces,
   })
 end
 
 local function restore_buffers(directory_args)
-  local data = read_storage()
-  if not data then
+  local directory = working_directory()
+  local session = session_for_directory(read_storage(), directory)
+  if not session then
     return
   end
 
   local buffers = {}
   local seen = {}
-  for _, path in ipairs(data.buffers) do
-    if type(path) == "string" and not seen[path] then
-      local stat = vim.uv.fs_stat(path)
-      if stat and stat.type == "file" then
-        buffers[#buffers + 1] = path
-        seen[path] = true
+  for _, path in ipairs(session.buffers) do
+    if type(path) == "string" then
+      local normalized = normalize_path(path)
+      if not seen[normalized] and is_path_in_directory(normalized, directory) then
+        local stat = vim.uv.fs_stat(normalized)
+        if stat and stat.type == "file" then
+          buffers[#buffers + 1] = normalized
+          seen[normalized] = true
+        end
       end
     end
   end
@@ -138,7 +217,7 @@ local function restore_buffers(directory_args)
     return
   end
 
-  local current = type(data.current) == "string" and data.current or nil
+  local current = type(session.current) == "string" and normalize_path(session.current) or nil
   if not current or not seen[current] then
     current = buffers[1]
   end
@@ -162,7 +241,7 @@ end
 local function startup_directory_args()
   local directories = {}
   for _, argument in ipairs(vim.fn.argv()) do
-    local path = vim.fs.normalize(vim.fn.fnamemodify(argument, ":p"))
+    local path = normalize_path(argument)
     local stat = vim.uv.fs_stat(path)
     if not stat or stat.type ~= "directory" then
       return nil
